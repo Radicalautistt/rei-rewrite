@@ -3,6 +3,12 @@
 
 #include <stdlib.h>
 
+#ifdef __linux__
+#  define VK_USE_PLATFORM_XCB_KHR
+#else
+#  error "Unhandled platform..."
+#endif
+
 #include <volk/volk.h>
 
 #include "rei_logger.h"
@@ -48,15 +54,7 @@
 REI_FD_VULKAN_TYPE (VmaAllocator);
 REI_FD_VULKAN_TYPE (VmaAllocation);
 
-// Create infos for Vulkan objects.
-typedef struct rei_vk_image_ci_t {
-  u32 width;
-  u32 height;
-  u32 mip_levels;
-  VkFormat format;
-  VkImageUsageFlags usage;
-  VkImageAspectFlags aspect_mask;
-} rei_vk_image_ci_t;
+typedef struct xcb_connection_t xcb_connection_t;
 
 typedef struct rei_vk_gfx_pipeline_ci_t {
   VkPipelineCache cache;
@@ -97,6 +95,14 @@ typedef struct rei_vk_device_t {
   u32 present_index;
 } rei_vk_device_t;
 
+typedef struct rei_vk_render_pass_t {
+  VkRenderPass handle;
+  VkFramebuffer* framebuffers;
+  u32 framebuffer_count;
+  u32 clear_value_count;
+  VkClearValue* clear_values;
+} rei_vk_render_pass_t; 
+
 typedef struct rei_vk_image_t {
   VkImage handle;
   VkImageView view;
@@ -110,6 +116,11 @@ typedef struct rei_vk_buffer_t {
   VmaAllocation memory;
 } rei_vk_buffer_t;
 
+typedef struct rei_vk_dynamic_buffer_t {
+  u64 current_offset;
+  rei_vk_buffer_t buffer;
+} rei_vk_dynamic_buffer_t;
+
 typedef struct rei_vk_swapchain_t {
   VkFormat format;
   u32 image_count;
@@ -122,12 +133,37 @@ typedef struct rei_vk_swapchain_t {
   rei_vk_image_t depth_image;
 } rei_vk_swapchain_t;
 
+typedef struct rei_vk_frame_data_t {
+  VkCommandBuffer cmd_buffer;
+  VkFence submit_fence;
+  VkSemaphore present_semaphore;
+  VkSemaphore render_semaphore;
+} rei_vk_frame_data_t;
+
 // Context for creation and submition of immediate commands (ones that stall gpu until their completion).
 typedef struct rei_vk_imm_ctxt_t {
   VkQueue queue;
   VkFence fence;
   VkCommandPool cmd_pool;
 } rei_vk_imm_ctxt_t;
+
+// Create infos for Vulkan objects.
+typedef struct rei_vk_image_ci_t {
+  u32 width;
+  u32 height;
+  u32 mip_levels;
+  VkFormat format;
+  VkImageUsageFlags usage;
+  VkImageAspectFlags aspect_mask;
+} rei_vk_image_ci_t;
+
+typedef struct rei_vk_render_pass_ci_t {
+  f32 r;
+  f32 g;
+  f32 b;
+  f32 a;
+  const rei_vk_swapchain_t* swapchain;
+} rei_vk_render_pass_ci_t;
 
 // Stringify VkResult for debugging purposes.
 const char* rei_vk_show_error (VkResult);
@@ -151,6 +187,12 @@ void rei_vk_choose_gpu (
   VkPhysicalDevice* out
 );
 
+#ifdef __linux__
+   void rei_vk_create_xcb_surface (VkInstance instance, u32 window_handle, xcb_connection_t* xcb_connection, VkSurfaceKHR* out);
+#else
+#  error "Unhandled platform..."
+#endif
+
 void rei_vk_create_device (
   VkPhysicalDevice physical_device,
   VkSurfaceKHR surface,
@@ -159,8 +201,10 @@ void rei_vk_create_device (
   rei_vk_device_t* out
 );
 
-void rei_vk_create_image (rei_vk_device_t* device, VmaAllocator allocator, const rei_vk_image_ci_t* create_info, rei_vk_image_t* out);
-void rei_vk_destroy_image (rei_vk_device_t* device, VmaAllocator allocator, rei_vk_image_t* image);
+void rei_vk_create_allocator (VkInstance instance, VkPhysicalDevice physical_device, const rei_vk_device_t* device, VmaAllocator* out);
+
+void rei_vk_create_image (const rei_vk_device_t* device, VmaAllocator allocator, const rei_vk_image_ci_t* create_info, rei_vk_image_t* out);
+void rei_vk_destroy_image (const rei_vk_device_t* device, VmaAllocator allocator, rei_vk_image_t* image);
 
 void rei_vk_create_buffer (
   VmaAllocator allocator,
@@ -171,10 +215,13 @@ void rei_vk_create_buffer (
   rei_vk_buffer_t* out
 );
 
+void rei_vk_map_buffer (VmaAllocator allocator, rei_vk_buffer_t* buffer);
+void rei_vk_unmap_buffer (VmaAllocator allocator, rei_vk_buffer_t* buffer);
+
 void rei_vk_destroy_buffer (VmaAllocator allocator, rei_vk_buffer_t* buffer);
 
 void rei_vk_create_swapchain (
-  rei_vk_device_t* device,
+  const rei_vk_device_t* device,
   VmaAllocator allocator,
   VkSwapchainKHR old,
   VkSurfaceKHR surface,
@@ -184,21 +231,30 @@ void rei_vk_create_swapchain (
   rei_vk_swapchain_t* out
 );
 
-void rei_vk_destroy_swapchain (rei_vk_device_t* device, VmaAllocator allocator, rei_vk_swapchain_t* swapchain);
+void rei_vk_destroy_swapchain (const rei_vk_device_t* device, VmaAllocator allocator, rei_vk_swapchain_t* swapchain);
 
-void rei_vk_create_shader_module (rei_vk_device_t* device, const char* relative_path, VkShaderModule* out);
-void rei_vk_create_gfx_pipeline (rei_vk_device_t* device, const rei_vk_gfx_pipeline_ci_t* create_info, VkPipeline* out);
+void rei_vk_create_render_pass (const rei_vk_device_t* device, const rei_vk_render_pass_ci_t* create_info, rei_vk_render_pass_t* out);
+void rei_vk_destroy_render_pass (const rei_vk_device_t* device, rei_vk_render_pass_t* render_pass);
 
-void rei_vk_create_imm_ctxt (rei_vk_device_t* device, u32 queue_index, rei_vk_imm_ctxt_t* out);
-void rei_vk_destroy_imm_ctxt (rei_vk_device_t* device, rei_vk_imm_ctxt_t* context);
-void rei_vk_start_imm_cmd (rei_vk_device_t* device, const rei_vk_imm_ctxt_t* context, VkCommandBuffer* out);
-void rei_vk_end_imm_cmd (rei_vk_device_t* device, const rei_vk_imm_ctxt_t* context, VkCommandBuffer cmd_buffer);
+void rei_vk_create_frame_data (const rei_vk_device_t* device, VkCommandPool cmd_pool, rei_vk_frame_data_t* out);
+void rei_vk_destroy_frame_data (const rei_vk_device_t* device, rei_vk_frame_data_t* frame_data);
+
+void rei_vk_create_shader_module (const rei_vk_device_t* device, const char* relative_path, VkShaderModule* out);
+void rei_vk_create_gfx_pipeline (const rei_vk_device_t* device, const rei_vk_gfx_pipeline_ci_t* create_info, VkPipeline* out);
+
+void rei_vk_create_imm_ctxt (const rei_vk_device_t* device, u32 queue_index, rei_vk_imm_ctxt_t* out);
+void rei_vk_destroy_imm_ctxt (const rei_vk_device_t* device, rei_vk_imm_ctxt_t* context);
+void rei_vk_start_imm_cmd (const rei_vk_device_t* device, const rei_vk_imm_ctxt_t* context, VkCommandBuffer* out);
+
 void rei_vk_transition_image_cmd (VkCommandBuffer cmd_buffer, const rei_vk_image_trans_info_t* trans_info, VkImage image);
+void rei_vk_copy_buffer_cmd (VkCommandBuffer cmd_buffer, u64 size, u64 src_offset, const rei_vk_buffer_t* src, rei_vk_buffer_t* dst);
 
-void rei_vk_create_sampler (rei_vk_device_t* device, f32 min_lod, f32 max_lod, VkFilter filter, VkSampler* out);
+void rei_vk_end_imm_cmd (const rei_vk_device_t* device, const rei_vk_imm_ctxt_t* context, VkCommandBuffer cmd_buffer);
+
+void rei_vk_create_sampler (const rei_vk_device_t* device, f32 min_lod, f32 max_lod, VkFilter filter, VkSampler* out);
 
 void rei_vk_create_texture (
-  rei_vk_device_t* device,
+  const rei_vk_device_t* device,
   VmaAllocator allocator,
   const rei_vk_imm_ctxt_t* context,
   u8* pixels,
@@ -208,7 +264,7 @@ void rei_vk_create_texture (
 );
 
 void rei_vk_create_texture_mipmapped (
-  rei_vk_device_t* device,
+  const rei_vk_device_t* device,
   VmaAllocator allocator,
   const rei_vk_imm_ctxt_t* context,
   u8* pixels,

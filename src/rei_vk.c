@@ -8,7 +8,7 @@
 #include "rei_debug.h"
 #include "rei_defines.h"
 
-#include <VulkanMemoryAllocator//include/vk_mem_alloc.h>
+#include <VulkanMemoryAllocator/include/vk_mem_alloc.h>
 
 const char* rei_vk_show_error (VkResult error) {
   #define SHOW_ERROR(name) case VK_##name: return #name
@@ -102,6 +102,7 @@ void rei_vk_create_instance (const char* const* required_ext, u32 required_ext_c
   #endif
 
   REI_VK_CHECK (vkCreateInstance (&create_info, NULL, out));
+  volkLoadInstanceOnly (*out);
 }
 
 b8 rei_vk_find_queue_indices (VkPhysicalDevice device, VkSurfaceKHR surface, rei_vk_queue_indices_t* out) {
@@ -196,6 +197,22 @@ void rei_vk_choose_gpu (
   }
 }
 
+#ifdef __linux__
+   void rei_vk_create_xcb_surface (VkInstance instance, u32 window_handle, xcb_connection_t* xcb_connection, VkSurfaceKHR* out) {
+     VkXcbSurfaceCreateInfoKHR create_info = {
+       .sType = VK_STRUCTURE_TYPE_XCB_SURFACE_CREATE_INFO_KHR,
+       .pNext = NULL,
+       .flags = 0,
+       .connection = xcb_connection,
+       .window = window_handle
+     };
+
+     REI_VK_CHECK (vkCreateXcbSurfaceKHR (instance, &create_info, NULL, out));
+   }
+#else
+#  error "Unhandled platform..."
+#endif
+
 void rei_vk_create_device (
   VkPhysicalDevice physical_device,
   VkSurfaceKHR surface,
@@ -250,13 +267,53 @@ void rei_vk_create_device (
   };
 
   REI_VK_CHECK (vkCreateDevice (physical_device, &create_info, NULL, &out->handle));
+  volkLoadDevice (out->handle);
 
   // FIXME I'm not entirely sure that third argument is correct here...
   vkGetDeviceQueue (out->handle, out->gfx_index, 0, &out->gfx_queue);
   vkGetDeviceQueue (out->handle, out->present_index, 0, &out->present_queue);
 }
 
-void rei_vk_create_image (rei_vk_device_t* device, VmaAllocator allocator, const rei_vk_image_ci_t* create_info, rei_vk_image_t* out) {
+void rei_vk_create_allocator (VkInstance instance, VkPhysicalDevice physical_device, const rei_vk_device_t* device, VmaAllocator* out) {
+  // Provide all the function pointers VMA needs to do its stuff.
+  VmaVulkanFunctions vk_function_pointers = {
+    .vkMapMemory = vkMapMemory,
+    .vkFreeMemory = vkFreeMemory,
+    .vkUnmapMemory = vkUnmapMemory,
+    .vkCreateImage = vkCreateImage,
+    .vkDestroyImage = vkDestroyImage,
+    .vkCreateBuffer = vkCreateBuffer,
+    .vkDestroyBuffer = vkDestroyBuffer,
+    .vkCmdCopyBuffer = vkCmdCopyBuffer,
+    .vkAllocateMemory = vkAllocateMemory,
+    .vkBindImageMemory = vkBindImageMemory,
+    .vkBindBufferMemory = vkBindBufferMemory,
+    .vkFlushMappedMemoryRanges = vkFlushMappedMemoryRanges,
+    .vkGetImageMemoryRequirements = vkGetImageMemoryRequirements,
+    .vkGetBufferMemoryRequirements = vkGetBufferMemoryRequirements,
+    .vkGetPhysicalDeviceProperties = vkGetPhysicalDeviceProperties,
+    .vkInvalidateMappedMemoryRanges = vkInvalidateMappedMemoryRanges,
+    .vkGetPhysicalDeviceMemoryProperties = vkGetPhysicalDeviceMemoryProperties
+  };
+
+  VmaAllocatorCreateInfo create_info = {
+    .flags = 0,
+    .physicalDevice = physical_device,
+    .device = device->handle,
+    .preferredLargeHeapBlockSize = 0,
+    .pAllocationCallbacks = NULL,
+    .pDeviceMemoryCallbacks = NULL,
+    .pHeapSizeLimit = NULL,
+    .pVulkanFunctions = &vk_function_pointers,
+    .instance = instance,
+    .vulkanApiVersion = REI_VK_VERSION,
+    .pTypeExternalMemoryHandleTypes = NULL,
+  };
+
+  REI_VK_CHECK (vmaCreateAllocator (&create_info, out));
+}
+
+void rei_vk_create_image (const rei_vk_device_t* device, VmaAllocator allocator, const rei_vk_image_ci_t* create_info, rei_vk_image_t* out) {
   VkImageCreateInfo image_info = {
     .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
     .pNext = NULL,
@@ -304,7 +361,7 @@ void rei_vk_create_image (rei_vk_device_t* device, VmaAllocator allocator, const
   REI_VK_CHECK (vkCreateImageView (device->handle, &view_info, NULL, &out->view));
 }
 
-void rei_vk_destroy_image (rei_vk_device_t* device, VmaAllocator allocator, rei_vk_image_t* image) {
+void rei_vk_destroy_image (const rei_vk_device_t* device, VmaAllocator allocator, rei_vk_image_t* image) {
   vkDestroyImageView (device->handle, image->view, NULL);
   vmaDestroyImage (allocator, image->handle, image->memory);
 }
@@ -324,12 +381,20 @@ void rei_vk_create_buffer (
   REI_VK_CHECK (vmaCreateBuffer (allocator, &create_info, &alloc_info, &out->handle, &out->memory, NULL));
 }
 
+void rei_vk_map_buffer (VmaAllocator allocator, rei_vk_buffer_t* buffer) {
+  REI_VK_CHECK (vmaMapMemory (allocator, buffer->memory, &buffer->mapped));
+}
+
+void rei_vk_unmap_buffer (VmaAllocator allocator, rei_vk_buffer_t* buffer) {
+  vmaUnmapMemory (allocator, buffer->memory);
+}
+
 void rei_vk_destroy_buffer (VmaAllocator allocator, rei_vk_buffer_t* buffer) {
   vmaDestroyBuffer (allocator, buffer->handle, buffer->memory);
 }
 
 void rei_vk_create_swapchain (
-  rei_vk_device_t* device,
+  const rei_vk_device_t* device,
   VmaAllocator allocator,
   VkSwapchainKHR old,
   VkSurfaceKHR surface,
@@ -478,7 +543,7 @@ void rei_vk_create_swapchain (
   rei_vk_create_image (device, allocator, &info, &out->depth_image);
 }
 
-void rei_vk_destroy_swapchain (rei_vk_device_t* device, VmaAllocator allocator, rei_vk_swapchain_t* swapchain) {
+void rei_vk_destroy_swapchain (const rei_vk_device_t* device, VmaAllocator allocator, rei_vk_swapchain_t* swapchain) {
   rei_vk_destroy_image (device, allocator, &swapchain->depth_image);
   for (u32 i = 0; i < swapchain->image_count; ++i) vkDestroyImageView (device->handle, swapchain->views[i], NULL);
   vkDestroySwapchainKHR (device->handle, swapchain->handle, NULL);
@@ -487,7 +552,140 @@ void rei_vk_destroy_swapchain (rei_vk_device_t* device, VmaAllocator allocator, 
   free (swapchain->images);
 }
 
-void rei_vk_create_shader_module (rei_vk_device_t* device, const char* relative_path, VkShaderModule* out) {
+void rei_vk_create_render_pass (const rei_vk_device_t* device, const rei_vk_render_pass_ci_t* create_info, rei_vk_render_pass_t* out) {
+  out->clear_value_count = 2;
+  out->clear_values = malloc (sizeof *out->clear_values * out->clear_value_count);
+
+  out->clear_values[0].color.float32[0] = create_info->r;
+  out->clear_values[0].color.float32[1] = create_info->g;
+  out->clear_values[0].color.float32[2] = create_info->b;
+  out->clear_values[0].color.float32[3] = create_info->a;
+  out->clear_values[1].depthStencil.depth = 1.f;
+  out->clear_values[1].depthStencil.stencil = 0;
+
+  { // Create render pass.
+    VkAttachmentDescription attachments[2] = {
+      [0] = { // Color attachment
+        .flags = 0,
+        .format = create_info->swapchain->format,
+        .samples = VK_SAMPLE_COUNT_1_BIT,
+        .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+        .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+        .finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+        .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+        .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE
+      },
+
+      [1] = { // Depth attachment
+        .flags = 0,
+        .format = REI_VK_DEPTH_FORMAT,
+        .samples = VK_SAMPLE_COUNT_1_BIT,
+        .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+        .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+        .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+        .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+        .finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL
+      }
+    };
+
+    VkAttachmentReference color_reference = {
+      .attachment = 0,
+      .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
+    };
+
+    VkAttachmentReference depth_reference = {
+      .attachment = 1,
+      .layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL
+    };
+
+    VkSubpassDescription subpass = {
+      .colorAttachmentCount = 1,
+      .pColorAttachments = &color_reference,
+      .pDepthStencilAttachment = &depth_reference,
+      .pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
+
+      .flags = 0,
+      .inputAttachmentCount = 0,
+      .pInputAttachments = NULL,
+      .pResolveAttachments = NULL,
+      .preserveAttachmentCount = 0,
+      .pPreserveAttachments = NULL
+    };
+
+    VkRenderPassCreateInfo vk_create_info = {
+      .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
+      .subpassCount = 1,
+      .attachmentCount = 2,
+      .pSubpasses = &subpass,
+      .pAttachments = attachments,
+
+      .pNext = NULL,
+      .flags = 0,
+      .dependencyCount = 0,
+      .pDependencies = NULL,
+    };
+
+    REI_VK_CHECK (vkCreateRenderPass (device->handle, &vk_create_info, NULL, &out->handle));
+  }
+
+  // Create framebuffers for every swapchain image.
+  const rei_vk_swapchain_t* swapchain = create_info->swapchain;
+
+  VkFramebufferCreateInfo vk_create_info = {
+    .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+    .pNext = NULL,
+    .flags = 0,
+    .renderPass = out->handle,
+    .attachmentCount = 2,
+    .width = swapchain->width,
+    .height = swapchain->height,
+    .layers = 1
+  };
+
+  out->framebuffer_count = swapchain->image_count;
+  out->framebuffers = malloc (sizeof *out->framebuffers * out->framebuffer_count);
+
+  for (u32 i = 0; i < swapchain->image_count; ++i) {
+    vk_create_info.pAttachments = (VkImageView[]) {swapchain->views[i], swapchain->depth_image.view};
+    REI_VK_CHECK (vkCreateFramebuffer (device->handle, &vk_create_info, NULL, &out->framebuffers[i]));
+  }
+}
+
+void rei_vk_destroy_render_pass (const rei_vk_device_t* device, rei_vk_render_pass_t* render_pass) {
+  for (u32 i = 0; i < render_pass->framebuffer_count; ++i) vkDestroyFramebuffer (device->handle, render_pass->framebuffers[i], NULL);
+  free (render_pass->framebuffers);
+
+  free (render_pass->clear_values);
+  vkDestroyRenderPass (device->handle, render_pass->handle, NULL);
+}
+
+void rei_vk_create_frame_data (const rei_vk_device_t* device, VkCommandPool cmd_pool, rei_vk_frame_data_t* out) {
+  VkCommandBufferAllocateInfo buffer_info = {
+    .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+    .pNext = NULL,
+    .commandPool = cmd_pool,
+    .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+    .commandBufferCount = 1
+  };
+
+  VkSemaphoreCreateInfo semaphore_info = {.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO, .pNext = NULL, .flags = 0};
+  VkFenceCreateInfo fence_info = {.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO, .pNext = NULL, .flags = VK_FENCE_CREATE_SIGNALED_BIT};
+
+  REI_VK_CHECK (vkAllocateCommandBuffers (device->handle, &buffer_info, &out->cmd_buffer));
+  REI_VK_CHECK (vkCreateFence (device->handle, &fence_info, NULL, &out->submit_fence));
+  REI_VK_CHECK (vkCreateSemaphore (device->handle, &semaphore_info, NULL, &out->present_semaphore));
+  REI_VK_CHECK (vkCreateSemaphore (device->handle, &semaphore_info, NULL, &out->render_semaphore));
+}
+
+void rei_vk_destroy_frame_data (const rei_vk_device_t* device, rei_vk_frame_data_t* frame_data) {
+  vkDestroySemaphore (device->handle, frame_data->render_semaphore, NULL);
+  vkDestroySemaphore (device->handle, frame_data->present_semaphore, NULL);
+  vkDestroyFence (device->handle, frame_data->submit_fence, NULL);
+}
+
+void rei_vk_create_shader_module (const rei_vk_device_t* device, const char* relative_path, VkShaderModule* out) {
   rei_file_t shader_code;
   REI_CHECK (rei_map_file (relative_path, &shader_code));
 
@@ -503,7 +701,7 @@ void rei_vk_create_shader_module (rei_vk_device_t* device, const char* relative_
   rei_unmap_file (&shader_code);
 }
 
-void rei_vk_create_gfx_pipeline (rei_vk_device_t* device, const rei_vk_gfx_pipeline_ci_t* create_info, VkPipeline* out) {
+void rei_vk_create_gfx_pipeline (const rei_vk_device_t* device, const rei_vk_gfx_pipeline_ci_t* create_info, VkPipeline* out) {
   VkPipelineInputAssemblyStateCreateInfo input_assembly_state = {
     .pNext = NULL,
     .flags = 0,
@@ -590,7 +788,7 @@ void rei_vk_create_gfx_pipeline (rei_vk_device_t* device, const rei_vk_gfx_pipel
   vkDestroyShaderModule (device->handle, vertex_shader, NULL);
 }
 
-void rei_vk_create_imm_ctxt (rei_vk_device_t* device, u32 queue_index, rei_vk_imm_ctxt_t* out) {
+void rei_vk_create_imm_ctxt (const rei_vk_device_t* device, u32 queue_index, rei_vk_imm_ctxt_t* out) {
   VkCommandPoolCreateInfo cmd_pool_info = {
     .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
     .pNext = NULL,
@@ -606,12 +804,12 @@ void rei_vk_create_imm_ctxt (rei_vk_device_t* device, u32 queue_index, rei_vk_im
   vkGetDeviceQueue (device->handle, queue_index, 0, &out->queue);
 }
 
-void rei_vk_destroy_imm_ctxt (rei_vk_device_t* device, rei_vk_imm_ctxt_t* context) {
+void rei_vk_destroy_imm_ctxt (const rei_vk_device_t* device, rei_vk_imm_ctxt_t* context) {
   vkDestroyFence (device->handle, context->fence, NULL);
   vkDestroyCommandPool (device->handle, context->cmd_pool, NULL);
 }
 
-void rei_vk_start_imm_cmd (rei_vk_device_t* device, const rei_vk_imm_ctxt_t* context, VkCommandBuffer* out) {
+void rei_vk_start_imm_cmd (const rei_vk_device_t* device, const rei_vk_imm_ctxt_t* context, VkCommandBuffer* out) {
   VkCommandBufferAllocateInfo alloc_info = {
     .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
     .pNext = NULL,
@@ -632,7 +830,7 @@ void rei_vk_start_imm_cmd (rei_vk_device_t* device, const rei_vk_imm_ctxt_t* con
   REI_VK_CHECK (vkBeginCommandBuffer (*out, &begin_info));
 }
 
-void rei_vk_end_imm_cmd (rei_vk_device_t* device, const rei_vk_imm_ctxt_t* context, VkCommandBuffer cmd_buffer) {
+void rei_vk_end_imm_cmd (const rei_vk_device_t* device, const rei_vk_imm_ctxt_t* context, VkCommandBuffer cmd_buffer) {
   REI_VK_CHECK (vkEndCommandBuffer (cmd_buffer));
 
   VkSubmitInfo submit_info = {
@@ -654,7 +852,7 @@ void rei_vk_end_imm_cmd (rei_vk_device_t* device, const rei_vk_imm_ctxt_t* conte
   REI_VK_CHECK (vkResetCommandPool (device->handle, context->cmd_pool, 0));
 }
 
-void rei_vk_create_sampler (rei_vk_device_t* device, f32 min_lod, f32 max_lod, VkFilter filter, VkSampler* out) {
+void rei_vk_create_sampler (const rei_vk_device_t* device, f32 min_lod, f32 max_lod, VkFilter filter, VkSampler* out) {
   VkSamplerCreateInfo create_info = {
     .minLod = min_lod,
     .maxLod = max_lod,
@@ -727,8 +925,18 @@ void rei_vk_transition_image_cmd (VkCommandBuffer cmd_buffer, const rei_vk_image
   vkCmdPipelineBarrier (cmd_buffer, trans_info->src_stage, trans_info->dst_stage, 0, 0, NULL, 0, NULL, 1, &barrier);
 }
 
+void rei_vk_copy_buffer_cmd (VkCommandBuffer cmd_buffer, u64 size, u64 src_offset, const rei_vk_buffer_t* src, rei_vk_buffer_t* dst) {
+  VkBufferCopy copy_info = {
+    .srcOffset = src_offset,
+    .dstOffset = 0,
+    .size = size
+  };
+
+  vkCmdCopyBuffer (cmd_buffer, src->handle, dst->handle, 1, &copy_info);
+}
+
 void rei_vk_create_texture (
-  rei_vk_device_t* device,
+  const rei_vk_device_t* device,
   VmaAllocator allocator,
   const rei_vk_imm_ctxt_t* context,
   u8* pixels,
@@ -824,7 +1032,7 @@ void rei_vk_create_texture (
 }
 
 void rei_vk_create_texture_mipmapped (
-  rei_vk_device_t* device,
+  const rei_vk_device_t* device,
   VmaAllocator allocator,
   const rei_vk_imm_ctxt_t* context,
   u8* pixels,
