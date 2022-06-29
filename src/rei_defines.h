@@ -9,4 +9,7 @@
 #define REI_CLAMP(value, min, max) (REI_MAX (min, REI_MIN (value, max)))
 #define REI_OFFSET_OF(structure, member) ((size_t) &(((structure*) NULL)->member))
 
+#define REI_FORCE_INLINE __attribute__ ((always_inline))
+//#define REI_ALIGN_AS(value) __attribute__ ((aligned (value)))
+
 #endif /* REI_DEFINES_H */
