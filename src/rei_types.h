@@ -24,6 +24,8 @@ typedef u32 b32;
 
 typedef enum rei_result_e {
   REI_RESULT_SUCCESS,
+  REI_RESULT_INVALID_JSON,
+  REI_RESULT_INVALID_FILE_PATH,
   REI_RESULT_FILE_DOES_NOT_EXIST
 } rei_result_e;
 
