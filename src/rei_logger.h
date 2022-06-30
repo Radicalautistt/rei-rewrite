@@ -18,9 +18,10 @@
 #define REI_LOG_WARN(format, ...) rei_logger (REI_LOG_LEVEL_WARN, format, __VA_ARGS__)
 #define REI_LOG_ERROR(format, ...) rei_logger (REI_LOG_LEVEL_ERROR, format, __VA_ARGS__)
 
-#define REI_LOGS_INFO(string) REI_LOG_INFO ("%s", string)
-#define REI_LOGS_WARN(string) REI_LOG_WARN ("%s", string)
-#define REI_LOGS_ERROR(string) REI_LOG_ERROR ("%s", string)
+// Special purpose macros for strings, lest to type REI_LOG_* ("%s", string) all the time.
+#define REI_LOG_STR_INFO(string) REI_LOG_INFO ("%s", string)
+#define REI_LOG_STR_WARN(string) REI_LOG_WARN ("%s", string)
+#define REI_LOG_STR_ERROR(string) REI_LOG_ERROR ("%s", string)
 
 typedef enum rei_log_level_e {
   REI_LOG_LEVEL_INFO,

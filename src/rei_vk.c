@@ -81,7 +81,7 @@ void rei_vk_create_instance (const char* const* required_ext, u32 required_ext_c
   }
 
   if (matched_count != required_ext_count) {
-    REI_LOGS_ERROR ("Vk initialization failure: required vulkan extensions aren't supported by this device.");
+    REI_LOG_STR_ERROR ("Vk initialization failure: required vulkan extensions aren't supported by this device.");
     for (u32 i = 0; i < required_ext_count; ++i) REI_LOG_ERROR ("\t%s", required_ext[i]);
     exit (EXIT_FAILURE);
   }
@@ -192,7 +192,7 @@ void rei_vk_choose_gpu (
   const b32 supports_blitting = props.optimalTilingFeatures & (VK_FORMAT_FEATURE_BLIT_SRC_BIT | VK_FORMAT_FEATURE_BLIT_DST_BIT);
 
   if (!*out && !supports_blitting) {
-    REI_LOGS_ERROR ("Vk initialization failure: unable to choose a suitable physical device.");
+    REI_LOG_STR_ERROR ("Vk initialization failure: unable to choose a suitable physical device.");
     exit (EXIT_FAILURE);
   }
 }
