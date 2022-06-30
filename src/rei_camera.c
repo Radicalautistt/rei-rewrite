@@ -28,6 +28,14 @@ void rei_create_camera (const rei_vec3_t* up, const rei_vec3_t* position, f32 as
   rei_perspective (rei_radians (REI_CAMERA_ZOOM), aspect, 0.1f, 1000.f, &out->projection_matrix);
 }
 
+void rei_camera_get_view_projection (const rei_camera_t* camera, rei_mat4_t* out) {
+  rei_vec3_t center;
+  rei_mat4_t view;
+  rei_vec3_add (&camera->position, &camera->front, &center);
+  rei_look_at (&camera->position, &center, &camera->up, &view);
+  rei_mat4_mul (&camera->projection_matrix, &view, out);
+}
+
 void rei_move_camera_left (rei_camera_t* camera, f32 delta_time) {
   rei_vec3_t temp;
   rei_vec3_mul_scalar (&camera->right, REI_CAMERA_SPEED * delta_time, &temp);

@@ -679,6 +679,89 @@ void rei_vk_create_frame_data (const rei_vk_device_t* device, VkCommandPool cmd_
   REI_VK_CHECK (vkCreateSemaphore (device->handle, &semaphore_info, NULL, &out->render_semaphore));
 }
 
+u32 rei_vk_begin_frame (
+  const rei_vk_device_t* device,
+  const rei_vk_render_pass_t* render_pass,
+  const rei_vk_frame_data_t* current_frame,
+  const rei_vk_swapchain_t* swapchain,
+  VkCommandBuffer* out) {
+
+  VkCommandBuffer cmd_buffer = current_frame->cmd_buffer;
+  VkFence submit_fence = current_frame->submit_fence;
+  VkSemaphore present_semaphore = current_frame->present_semaphore;
+  VkSemaphore render_semaphore = current_frame->render_semaphore;
+
+  REI_VK_CHECK (vkWaitForFences (device->handle, 1, &submit_fence, VK_TRUE, ~0ull));
+  REI_VK_CHECK (vkResetFences (device->handle, 1, &submit_fence));
+
+  u32 image_index = 0;
+  REI_VK_CHECK (vkAcquireNextImageKHR (device->handle, swapchain->handle, ~0ull, present_semaphore, VK_NULL_HANDLE, &image_index));
+
+  const VkCommandBufferBeginInfo cmd_begin_info = {
+    .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+    .pNext = NULL,
+    .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+    .pInheritanceInfo = NULL,
+  };
+
+  REI_VK_CHECK (vkBeginCommandBuffer (cmd_buffer, &cmd_begin_info));
+
+  VkRenderPassBeginInfo rndr_begin_info = {
+    .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+    .pNext = NULL,
+    .renderPass = render_pass->handle,
+    .framebuffer = render_pass->framebuffers[image_index],
+    .renderArea.extent.width = swapchain->width,
+    .renderArea.extent.height = swapchain->height,
+    .renderArea.offset.x = 0,
+    .renderArea.offset.y = 0,
+    .clearValueCount = render_pass->clear_value_count,
+    .pClearValues = render_pass->clear_values
+  };
+
+  vkCmdBeginRenderPass (cmd_buffer, &rndr_begin_info, VK_SUBPASS_CONTENTS_INLINE);
+
+  *out = cmd_buffer;
+  return image_index;
+}
+
+void rei_vk_end_frame (
+  const rei_vk_device_t* device,
+  const rei_vk_frame_data_t* current_frame,
+  const rei_vk_swapchain_t* swapchain,
+  u32 image_index) {
+
+  vkCmdEndRenderPass (current_frame->cmd_buffer);
+  REI_VK_CHECK (vkEndCommandBuffer (current_frame->cmd_buffer));
+
+  VkSubmitInfo submit_info = {
+    .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+    .pNext = NULL,
+    .waitSemaphoreCount = 1,
+    .pWaitSemaphores = &current_frame->present_semaphore,
+    .pWaitDstStageMask = (VkPipelineStageFlags[]) {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT},
+    .commandBufferCount = 1,
+    .pCommandBuffers = &current_frame->cmd_buffer,
+    .signalSemaphoreCount = 1,
+    .pSignalSemaphores = &current_frame->render_semaphore,
+  };
+
+  REI_VK_CHECK (vkQueueSubmit (device->gfx_queue, 1, &submit_info, current_frame->submit_fence));
+
+  VkPresentInfoKHR present_info = {
+    .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
+    .pNext = NULL,
+    .waitSemaphoreCount = 1,
+    .pWaitSemaphores = &current_frame->render_semaphore,
+    .swapchainCount = 1,
+    .pSwapchains = &swapchain->handle,
+    .pImageIndices = &image_index,
+    .pResults = NULL
+  };
+
+  REI_VK_CHECK (vkQueuePresentKHR (device->present_queue, &present_info));
+}
+
 void rei_vk_destroy_frame_data (const rei_vk_device_t* device, rei_vk_frame_data_t* frame_data) {
   vkDestroySemaphore (device->handle, frame_data->render_semaphore, NULL);
   vkDestroySemaphore (device->handle, frame_data->present_semaphore, NULL);

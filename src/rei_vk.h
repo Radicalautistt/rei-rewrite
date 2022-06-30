@@ -237,6 +237,22 @@ void rei_vk_create_render_pass (const rei_vk_device_t* device, const rei_vk_rend
 void rei_vk_destroy_render_pass (const rei_vk_device_t* device, rei_vk_render_pass_t* render_pass);
 
 void rei_vk_create_frame_data (const rei_vk_device_t* device, VkCommandPool cmd_pool, rei_vk_frame_data_t* out);
+
+u32 rei_vk_begin_frame (
+  const rei_vk_device_t* device,
+  const rei_vk_render_pass_t* render_pass,
+  const rei_vk_frame_data_t* current_frame,
+  const rei_vk_swapchain_t* swapchain,
+  VkCommandBuffer* out
+);
+
+void rei_vk_end_frame (
+  const rei_vk_device_t* device,
+  const rei_vk_frame_data_t* current_frame,
+  const rei_vk_swapchain_t* swapchain,
+  u32 image_index
+);
+
 void rei_vk_destroy_frame_data (const rei_vk_device_t* device, rei_vk_frame_data_t* frame_data);
 
 void rei_vk_create_shader_module (const rei_vk_device_t* device, const char* relative_path, VkShaderModule* out);

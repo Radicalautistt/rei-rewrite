@@ -1,11 +1,10 @@
 #include <sys/time.h>
 
 #include "rei_vk.h"
+#include "rei_debug.h"
 #include "rei_model.h"
 #include "rei_window.h"
 #include "rei_camera.h"
-#include "rei_debug.h"
-#include "rei_math.inl"
 #include "rei_defines.h"
 #include "rei_asset_loaders.h"
 
@@ -340,16 +339,6 @@ int main (void) {
   const f32 delta_time = 1.f / 60.f;
   xcb_generic_event_t* event;
 
-  // Game loop invariants
-  const VkCommandBufferBeginInfo cmd_begin_info = {
-    .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-    .pNext = NULL,
-    .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
-    .pInheritanceInfo = NULL,
-  };
-
-  const VkPipelineStageFlags pipeline_wait_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-
   for (;;) {
     //ImGuiIO* imgui_io = igGetIO ();
     //imgui_io->DeltaTime = delta_time;
@@ -378,46 +367,17 @@ int main (void) {
 
     frame_index %= REI_VK_FRAME_COUNT;
 
-    const rei_vk_frame_data_t* current = &vk_frames[frame_index];
-    VkCommandBuffer cmd_buffer = current->cmd_buffer;
-    VkFence submit_fence = current->submit_fence;
-    VkSemaphore present_semaphore = current->present_semaphore;
-    VkSemaphore render_semaphore = current->render_semaphore;
-
-    REI_VK_CHECK (vkWaitForFences (vk_device.handle, 1, &submit_fence, VK_TRUE, ~0ull));
-    REI_VK_CHECK (vkResetFences (vk_device.handle, 1, &submit_fence));
-
-    u32 image_index = 0;
-    REI_VK_CHECK (vkAcquireNextImageKHR (vk_device.handle, swapchain.handle, ~0ull, present_semaphore, VK_NULL_HANDLE, &image_index));
-
-    REI_VK_CHECK (vkBeginCommandBuffer (cmd_buffer, &cmd_begin_info));
-
-    VkRenderPassBeginInfo rndr_begin_info = {
-      .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
-      .pNext = NULL,
-      .renderPass = vk_render_pass.handle,
-      .framebuffer = vk_render_pass.framebuffers[image_index],
-      .renderArea.extent.width = swapchain.width,
-      .renderArea.extent.height = swapchain.height,
-      .renderArea.offset.x = 0,
-      .renderArea.offset.y = 0,
-      .clearValueCount = vk_render_pass.clear_value_count,
-      .pClearValues = vk_render_pass.clear_values
-    };
-
-    vkCmdBeginRenderPass (cmd_buffer, &rndr_begin_info, VK_SUBPASS_CONTENTS_INLINE);
-
-    rei_vec3_t center;
-    rei_mat4_t view_matrix;
-    rei_vec3_add (&camera.position, &camera.front, &center);
-    rei_look_at (&camera.position, &center, &camera.up, &view_matrix);
+    VkCommandBuffer vk_cmd_buffer;
+    const rei_vk_frame_data_t* vk_current_frame = &vk_frames[frame_index];
+    const u32 vk_image_index = rei_vk_begin_frame (&vk_device, &vk_render_pass, vk_current_frame, &swapchain, &vk_cmd_buffer);
 
     rei_mat4_t view_projection;
-    rei_mat4_mul (&camera.projection_matrix, &view_matrix, &view_projection);
+    rei_camera_get_view_projection (&camera, &view_projection);
 
-    vkCmdBindPipeline (cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, default_pipeline);
-    rei_draw_model_cmd (&test_model, cmd_buffer, default_pipeline_layout, &view_projection);
+    vkCmdBindPipeline (vk_cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, default_pipeline);
+    rei_draw_model_cmd (&test_model, vk_cmd_buffer, default_pipeline_layout, &view_projection);
 
+    rei_vk_end_frame (&vk_device, vk_current_frame, &swapchain, vk_image_index);
 #if 0
     rei_new_imgui_frame (imgui_io);
     rei_imgui_debug_window (imgui_io);
@@ -427,36 +387,6 @@ int main (void) {
     rei_update_imgui (vk_allocator, &imgui_frame_data, imgui_data, frame_index);
     rei_render_imgui_cmd (cmd_buffer, &imgui_frame_data, imgui_data, frame_index);
 #endif
-
-    vkCmdEndRenderPass (cmd_buffer);
-    REI_VK_CHECK (vkEndCommandBuffer (cmd_buffer));
-
-    VkSubmitInfo submit_info = {
-      .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-      .pNext = NULL,
-      .waitSemaphoreCount = 1,
-      .pWaitSemaphores = &present_semaphore,
-      .pWaitDstStageMask = &pipeline_wait_stage,
-      .commandBufferCount = 1,
-      .pCommandBuffers = &cmd_buffer,
-      .signalSemaphoreCount = 1,
-      .pSignalSemaphores = &render_semaphore,
-    };
-
-    REI_VK_CHECK (vkQueueSubmit (vk_device.gfx_queue, 1, &submit_info, submit_fence));
-
-    VkPresentInfoKHR present_info = {
-      .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
-      .pNext = NULL,
-      .waitSemaphoreCount = 1,
-      .pWaitSemaphores = &render_semaphore,
-      .swapchainCount = 1,
-      .pSwapchains = &swapchain.handle,
-      .pImageIndices = &image_index,
-      .pResults = NULL
-    };
-
-    REI_VK_CHECK (vkQueuePresentKHR (vk_device.present_queue, &present_info));
     ++frame_index;
   }
 
