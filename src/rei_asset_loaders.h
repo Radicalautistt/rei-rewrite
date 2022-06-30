@@ -96,7 +96,7 @@ typedef struct rei_gltf_material_t {
 } rei_gltf_material_t;
 
 typedef struct rei_gltf_primitive_t {
-  u32 index_count;
+  u32 indices_index;
   u32 material_index;
 
   u32 position_index;

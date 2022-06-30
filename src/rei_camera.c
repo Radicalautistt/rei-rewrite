@@ -25,7 +25,7 @@ void rei_create_camera (const rei_vec3_t* up, const rei_vec3_t* position, f32 as
   out->position = *position;
 
   rei_update_camera (out);
-  rei_perspective (rei_radians (REI_CAMERA_ZOOM), aspect, 0.1f, 100.f, &out->projection_matrix);
+  rei_perspective (rei_radians (REI_CAMERA_ZOOM), aspect, 0.1f, 1000.f, &out->projection_matrix);
 }
 
 void rei_move_camera_left (rei_camera_t* camera, f32 delta_time) {

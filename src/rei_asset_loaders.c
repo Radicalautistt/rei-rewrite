@@ -226,7 +226,7 @@ static void _s_gltf_parse_accessors (struct _s_gltf_state_t* state, rei_gltf_t* 
     const jsmntok_t* current_accessor = state->current_token++;
 
     for (s32 j = 0; j < current_accessor->size; ++j) {
-      if (_s_gltf_string_eq (state, "bufferview", state->current_token)) {
+      if (_s_gltf_string_eq (state, "bufferView", state->current_token)) {
         _s_gltf_parse_u32 (state, &new_accessor->buffer_view_index);
       } else if (_s_gltf_string_eq (state, "count", state->current_token)) {
         _s_gltf_parse_u32 (state, &new_accessor->count);
@@ -418,7 +418,7 @@ static void _s_gltf_parse_meshes (struct _s_gltf_state_t* state, rei_gltf_t* out
 
 	  for (s32 l = 0; l < primitive->size; ++l) {
 	    if (_s_gltf_string_eq (state, "indices", state->current_token)) {
-              _s_gltf_parse_u32 (state, &new_primitive->index_count);
+              _s_gltf_parse_u32 (state, &new_primitive->indices_index);
 	    } else if (_s_gltf_string_eq (state, "material", state->current_token)) {
               _s_gltf_parse_u32 (state, &new_primitive->material_index);
 	    } else if (_s_gltf_string_eq (state, "attributes", state->current_token)) {
@@ -520,13 +520,9 @@ rei_result_e rei_gltf_load (const char* relative_path, rei_gltf_t* out) {
 void rei_gltf_destroy (rei_gltf_t* gltf) {
   rei_unmap_file (&gltf->buffer);
 
-  for (u32 i = 0; gltf->mesh_count; ++i) {
-    for (u64 j = 0; gltf->meshes[i].primitive_count; ++j) {
-      free (&gltf->meshes[i].primitives[j]);
-    }
-  }
-
+  for (u32 i = 0; i < gltf->mesh_count; ++i) free (gltf->meshes[i].primitives);
   free (gltf->meshes);
+
   //free (gltf->materials);
   free (gltf->textures);
 

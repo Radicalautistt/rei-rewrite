@@ -102,7 +102,7 @@ static inline void rei_vec4_mul_scalar (const rei_vec4_t* vector, f32 scalar, re
   _mm_store_ps (&out->x, _mm_mul_ps (_mm_set1_ps (scalar), rei_vec4_load (vector)));
 }
 
-static inline void rei_mat4_make_default (rei_mat4_t* out) {
+static inline void rei_mat4_create_default (rei_mat4_t* out) {
   out->rows[0].x = 1.f;
   out->rows[0].y = 0.f;
   out->rows[0].z = 0.f;
