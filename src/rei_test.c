@@ -346,20 +346,14 @@ int main (void) {
     while ((event = xcb_poll_for_event (window.conn))) {
       //rei_handle_imgui_events (imgui_io, &window, event);
 
-      switch (event->response_type) {
-        case XCB_KEY_PRESS:
-	  switch (((xcb_key_press_event_t*) event)->detail) {
-	    // Use goto to get out of the game loop instead of
-	    // while (running) {...} to prevent branching
-	    case REI_X11_KEY_ESCAPE: free (event); goto RESOURCE_CLEANUP_L;
-	    case REI_X11_KEY_A: rei_move_camera_left (&camera, delta_time); break;
-	    case REI_X11_KEY_D: rei_move_camera_right (&camera, delta_time); break;
-	    case REI_X11_KEY_W: rei_move_camera_forward (&camera, delta_time); break;
-	    case REI_X11_KEY_S: rei_move_camera_backward (&camera, delta_time); break;
-	    default: break;
-	  }
-	  break;
-	default: break;
+      if (event->response_type == XCB_KEY_PRESS) {
+        const xcb_key_press_event_t* key_press = (const xcb_key_press_event_t*) event;
+
+        if (key_press->detail == REI_X11_KEY_ESCAPE) goto RESOURCE_CLEANUP_L;
+        if (key_press->detail == REI_X11_KEY_A) rei_move_camera_left (&camera, delta_time);
+        if (key_press->detail == REI_X11_KEY_D) rei_move_camera_right (&camera, delta_time);
+        if (key_press->detail == REI_X11_KEY_W) rei_move_camera_forward (&camera, delta_time);
+        if (key_press->detail == REI_X11_KEY_S) rei_move_camera_backward (&camera, delta_time);
       }
 
       free (event);
