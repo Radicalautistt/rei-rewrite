@@ -119,7 +119,7 @@ int main (void) {
   }
 
   // FIXME max_lod is hardcoded.
-  rei_vk_create_sampler (&vk_device, 0.f, 9.f, VK_FILTER_NEAREST, &default_sampler);
+  rei_vk_create_sampler (&vk_device, 0.f, 0.f, VK_FILTER_NEAREST, &default_sampler);
 
   {
     VkDescriptorSetLayoutBinding albedo = {
@@ -167,8 +167,8 @@ int main (void) {
       .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
       .pNext = NULL,
       .flags = 0,
-      .setLayoutCount = 0,
-      .pSetLayouts = NULL,
+      .setLayoutCount = 1,
+      .pSetLayouts = &default_descriptor_layout,
       .pushConstantRangeCount = 1,
       .pPushConstantRanges = &push_constant,
     };
@@ -306,11 +306,11 @@ int main (void) {
     rei_vk_create_gfx_pipeline (&vk_device, &create_info, &default_pipeline);
   }
 
-  rei_create_model ("assets/sponza/Sponza.gltf", &vk_device, vk_allocator, &imm_ctxt, &test_model);
+  rei_create_model ("assets/sponza/Sponza.gltf", &vk_device, vk_allocator, &imm_ctxt, default_sampler, default_descriptor_layout, &test_model);
 
   rei_create_camera (
     &(rei_vec3_t) {.x = 0.f, .y = 1.f, .z = 0.f},
-    &(rei_vec3_t) {.x = 5.5f, .y = 5.f, .z = 60.f},
+    &(rei_vec3_t) {.x = 0.f, .y = 1.f, .z = 60.f},
     (f32) (swapchain.width / swapchain.height),
     -90.f,
     0.f,
@@ -393,7 +393,7 @@ RESOURCE_CLEANUP_L:
   rei_destroy_imgui_ctxt (&vk_device, vk_allocator, &imgui_ctxt);
 #endif
 
-  rei_destroy_model (vk_allocator, &test_model);
+  rei_destroy_model (&vk_device, vk_allocator, &test_model);
   vkDestroyPipeline (vk_device.handle, default_pipeline, NULL);
   vkDestroyPipelineLayout (vk_device.handle, default_pipeline_layout, NULL);
   vkDestroyDescriptorPool (vk_device.handle, main_descriptor_pool, NULL);
