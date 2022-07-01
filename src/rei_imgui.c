@@ -19,13 +19,12 @@ void rei_create_imgui_ctxt (
   out->handle = igCreateContext (NULL);
 
   { // Create font texture.
-    u8* pixels;
-    s32 width, height;
+    rei_image_t font_image;
 
     const ImGuiIO* io = igGetIO ();
-    ImFontAtlas_GetTexDataAsRGBA32 (io->Fonts, &pixels, &width, &height, NULL);
+    ImFontAtlas_GetTexDataAsRGBA32 (io->Fonts, &font_image.pixels, (s32*) &font_image.width, (s32*) &font_image.height, NULL);
 
-    rei_vk_create_texture (device, allocator, imm_ctxt, pixels, (u32) width, (u32) height, &out->font_texture);
+    rei_vk_create_texture (device, allocator, imm_ctxt, &font_image, &out->font_texture);
     ImFontAtlas_ClearTexData (io->Fonts);
     ImFontAtlas_SetTexID (io->Fonts, (void*) ((u64) out->font_texture.handle));
   }

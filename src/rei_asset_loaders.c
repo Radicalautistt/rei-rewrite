@@ -8,6 +8,7 @@
 #include "rei_asset_loaders.h"
 
 #include <png.h>
+#include <jpeglib.h>
 #include <jsmn/jsmn.h>
 
 struct _s_gltf_state_t {
@@ -50,7 +51,7 @@ static void _s_read_png (png_structp png_reader, png_bytep out, size_t count) {
   png_file->data += count;
 }
 
-void rei_load_png (const char* relative_path, rei_png_t* out) {
+void rei_load_png (const char* relative_path, rei_image_t* out) {
   REI_LOG_INFO ("Loading an image from " REI_ANSI_YELLOW "\"%s\"", relative_path);
 
   rei_file_t png_file;
@@ -72,6 +73,8 @@ void rei_load_png (const char* relative_path, rei_png_t* out) {
   png_get_IHDR (png_reader, png_info, &out->width, &out->height, NULL, NULL, NULL, NULL, NULL);
 
   u32 bytes_per_row = (u32) png_get_rowbytes (png_reader, png_info);
+  // FIXME hardcoded.
+  out->component_count = 4;
   out->pixels = malloc (bytes_per_row * out->height);
 
   const png_bytepp rows = png_get_rows (png_reader, png_info);
@@ -80,6 +83,46 @@ void rei_load_png (const char* relative_path, rei_png_t* out) {
     memcpy (out->pixels + (bytes_per_row * (out->height - 1 - i)), rows[i], bytes_per_row);
 
   png_destroy_read_struct (&png_reader, &png_info, NULL);
+}
+
+void rei_load_jpeg (const char* relative_path, rei_image_t* out) {
+  REI_LOG_INFO ("Loading an image from " REI_ANSI_YELLOW "\"%s\"", relative_path);
+
+  struct jpeg_decompress_struct decomp_info;
+  struct jpeg_error_mgr error_mgr;
+
+  decomp_info.err = jpeg_std_error (&error_mgr);
+
+  jpeg_create_decompress (&decomp_info);
+
+  // TODO find a way to use rei_map_file instead of stdio.
+  FILE* image_file = fopen (relative_path, "rb");
+  if (!image_file) {
+    fprintf (stderr, "Failed to open \"%s\". No such file.\n", relative_path);
+    exit (EXIT_FAILURE);
+  }
+
+  jpeg_stdio_src (&decomp_info, image_file);
+  jpeg_read_header (&decomp_info, 1);
+
+  jpeg_start_decompress (&decomp_info);
+
+  out->width = decomp_info.image_width;
+  out->height = decomp_info.image_height;
+  out->component_count = (u32) decomp_info.output_components;
+  out->pixels = malloc (out->width * out->height * out->component_count);
+
+  const u32 row_stride = out->width * out->component_count;
+
+  while (decomp_info.output_scanline < out->height) {
+    u8* current_row[] = {&out->pixels[row_stride * decomp_info.output_scanline]};
+    jpeg_read_scanlines (&decomp_info, current_row, 1);
+  }
+
+  jpeg_finish_decompress (&decomp_info);
+  jpeg_destroy_decompress (&decomp_info);
+
+  fclose (image_file);
 }
 
 static REI_FORCE_INLINE b8 _s_is_digit (char symbol) {
@@ -381,8 +424,6 @@ static void _s_gltf_parse_materials (struct _s_gltf_state_t* state, rei_gltf_t* 
         _s_gltf_skip (state);
       }
     }
-
-    REI_LOG_ERROR ("ALBEDO %u", new_material->albedo_index);
   }
 }
 

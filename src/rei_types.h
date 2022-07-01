@@ -47,4 +47,12 @@ typedef struct rei_vertex_t {
   f32 u, v;
 } rei_vertex_t;
 
+typedef struct rei_image_t {
+  u32 width;
+  u32 height;
+  u32 component_count;
+  u32 __padding;
+  u8* pixels;
+} rei_image_t;
+
 #endif /* REI_TYPES_H */

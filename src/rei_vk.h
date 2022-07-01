@@ -48,6 +48,9 @@
    } while (0)
 #endif
 
+#define REI_VK_BIND_DESCRIPTORS(__cmd_buffer, __pipeline_layout, __count, __descriptors) \
+  vkCmdBindDescriptorSets (__cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, __pipeline_layout, 0, __count, __descriptors, 0, NULL);
+
 #define REI_FD_VULKAN_TYPE(name) typedef struct name##_T* name
 
 // Forward declare Vulkan types.
@@ -101,7 +104,7 @@ typedef struct rei_vk_render_pass_t {
   u32 framebuffer_count;
   u32 clear_value_count;
   VkClearValue* clear_values;
-} rei_vk_render_pass_t; 
+} rei_vk_render_pass_t;
 
 typedef struct rei_vk_image_t {
   VkImage handle;
@@ -273,9 +276,7 @@ void rei_vk_create_texture (
   const rei_vk_device_t* device,
   VmaAllocator allocator,
   const rei_vk_imm_ctxt_t* context,
-  u8* pixels,
-  u32 width,
-  u32 height,
+  const rei_image_t* src,
   rei_vk_image_t* out
 );
 
@@ -283,9 +284,7 @@ void rei_vk_create_texture_mipmapped (
   const rei_vk_device_t* device,
   VmaAllocator allocator,
   const rei_vk_imm_ctxt_t* context,
-  u8* pixels,
-  u32 width,
-  u32 height,
+  const rei_image_t* src,
   rei_vk_image_t* out
 );
 

@@ -952,9 +952,9 @@ void rei_vk_create_sampler (const rei_vk_device_t* device, f32 min_lod, f32 max_
     .unnormalizedCoordinates = VK_FALSE,
     .mipmapMode = filter == VK_FILTER_NEAREST ? VK_SAMPLER_MIPMAP_MODE_NEAREST : VK_SAMPLER_MIPMAP_MODE_LINEAR,
     .borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE,
-    .addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-    .addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-    .addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE
+    .addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+    .addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+    .addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT
   };
 
   REI_VK_CHECK (vkCreateSampler (device->handle, &create_info, NULL, out));
@@ -1022,16 +1022,17 @@ void rei_vk_create_texture (
   const rei_vk_device_t* device,
   VmaAllocator allocator,
   const rei_vk_imm_ctxt_t* context,
-  u8* pixels,
-  u32 width,
-  u32 height,
+  const rei_image_t* src,
   rei_vk_image_t* out) {
 
   rei_vk_buffer_t staging;
 
+  REI_ASSERT (src->component_count == 3 || src->component_count == 4);
+
+  const u64 image_size = src->width * src->height * src->component_count;
   rei_vk_create_buffer (
     allocator,
-    width * height * 4,
+    image_size,
     VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
     VMA_MEMORY_USAGE_CPU_ONLY,
     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
@@ -1039,15 +1040,15 @@ void rei_vk_create_texture (
   );
 
   REI_VK_CHECK (vmaMapMemory (allocator, staging.memory, &staging.mapped));
-  memcpy (staging.mapped, pixels, width * height * 4);
+  memcpy (staging.mapped, src->pixels, image_size);
   vmaUnmapMemory (allocator, staging.memory);
 
   {
     rei_vk_image_ci_t create_info = {
-      .width = width,
-      .height = height,
+      .width = src->width,
+      .height = src->height,
       .mip_levels = 1,
-      .format = VK_FORMAT_R8G8B8A8_SRGB,
+      .format = src->component_count == 3 ? VK_FORMAT_R8G8B8_SRGB : VK_FORMAT_R8G8B8A8_SRGB,
       .usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
       .aspect_mask = VK_IMAGE_ASPECT_COLOR_BIT,
     };
@@ -1090,8 +1091,8 @@ void rei_vk_create_texture (
       .imageOffset.x = 0,
       .imageOffset.y = 0,
       .imageOffset.z = 0,
-      .imageExtent.width = width,
-      .imageExtent.height = height,
+      .imageExtent.width = src->width,
+      .imageExtent.height = src->height,
       .imageExtent.depth = 1
     };
 
@@ -1118,18 +1119,16 @@ void rei_vk_create_texture_mipmapped (
   const rei_vk_device_t* device,
   VmaAllocator allocator,
   const rei_vk_imm_ctxt_t* context,
-  u8* pixels,
-  u32 width,
-  u32 height,
+  const rei_image_t* src,
   rei_vk_image_t* out) {
 
   // Calculate number of mip levels.
-  const u32 mip_levels = (u32) (floorf (log2f ((f32) REI_MAX (width, height)))) + 1;
+  const u32 mip_levels = (u32) (floorf (log2f ((f32) REI_MAX (src->width, src->height)))) + 1;
 
   {
     rei_vk_image_ci_t create_info = {
-      .width = width,
-      .height = height,
+      .width = src->width,
+      .height = src->height,
       .mip_levels = mip_levels,
       .format = VK_FORMAT_R8G8B8A8_SRGB,
       .usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
@@ -1140,7 +1139,7 @@ void rei_vk_create_texture_mipmapped (
   }
 
   rei_vk_buffer_t staging;
-  const u64 staging_size = (u64) (width * height * 4);
+  const u64 staging_size = (u64) (src->width * src->height * 4);
 
   rei_vk_create_buffer (
     allocator,
@@ -1152,7 +1151,7 @@ void rei_vk_create_texture_mipmapped (
   );
 
   REI_VK_CHECK (vmaMapMemory (allocator, staging.memory, &staging.mapped));
-  memcpy (staging.mapped, pixels, staging_size);
+  memcpy (staging.mapped, src->pixels, staging_size);
   memset (staging.mapped, 1, staging_size);
   vmaUnmapMemory (allocator, staging.memory);
 
@@ -1194,8 +1193,8 @@ void rei_vk_create_texture_mipmapped (
       .imageOffset.y = 0,
       .imageOffset.z = 0,
 
-      .imageExtent.width = width,
-      .imageExtent.height = height,
+      .imageExtent.width = src->width,
+      .imageExtent.height = src->height,
       .imageExtent.depth = 1
     };
 
@@ -1237,7 +1236,7 @@ void rei_vk_create_texture_mipmapped (
       .srcSubresource.mipLevel = i - 1,
 
       .srcOffsets[0] = {.x = 0, .y = 0, .z = 0},
-      .srcOffsets[1] = {.x = (s32) (width >> (i - 1)), .y = (s32) (height >> (i - 1)), .z = 1},
+      .srcOffsets[1] = {.x = (s32) (src->width >> (i - 1)), .y = (s32) (src->height >> (i - 1)), .z = 1},
 
       .dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
       .dstSubresource.baseArrayLayer = 0,
@@ -1245,7 +1244,7 @@ void rei_vk_create_texture_mipmapped (
       .dstSubresource.mipLevel = i,
 
       .dstOffsets[0] = {.x = 0, .y = 0, .z = 0},
-      .dstOffsets[1] = {.x = (s32) (width >> i), .y = (s32) (height >> i), .z = 1},
+      .dstOffsets[1] = {.x = (s32) (src->width >> i), .y = (s32) (src->height >> i), .z = 1},
     };
 
     vkCmdBlitImage (
