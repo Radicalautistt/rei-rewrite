@@ -352,25 +352,22 @@ static void _s_gltf_parse_materials (struct _s_gltf_state_t* state, rei_gltf_t* 
   out->material_count = (u32) root_token->size;
   out->materials = malloc (sizeof *out->materials * out->material_count);
 
-#if 0
   for (s32 i = 0; i < root_token->size; ++i) {
     rei_gltf_material_t* new_material = &out->materials[i];
-    const jsmntok_t* current_material = &state->tokens[state->position++];
+    const jsmntok_t* current_material = state->current_token++;
 
     for (s32 j = 0; j < current_material->size; ++j) {
-      const jsmntok_t* current_token = &state->tokens[state->position];
+      if (_s_gltf_string_eq (state, "pbrMetallicRoughness", state->current_token)) {
+        ++state->current_token;
+        const jsmntok_t* pbr = state->current_token++;
 
-      if (_s_gltf_string_eq (state, "pbrMetallicRoughness", current_token)) {
-        ++state->position;
-
-	const jsmntok_t* pbr = &state->tokens[state->position++];
 	for (s32 k = 0; k < pbr->size; ++k) {
-          const jsmntok_t* zhopa = &state->tokens[state->position];
+          if (_s_gltf_string_eq (state, "baseColorTexture", state->current_token)) {
+	    ++state->current_token;
+            const jsmntok_t* albedo = state->current_token++;
 
-          if (_s_gltf_string_eq (state, "baseColorTexture", &state->tokens[state->position])) {
-            ++state->position;
-            for (s32 m = 0; m < zhopa->size; ++m) {
-              if (_s_gltf_string_eq (state, "index", &state->tokens[state->position])) {
+	    for (s32 m = 0; m < albedo->size; ++m) {
+	      if (_s_gltf_string_eq (state, "index", state->current_token)) {
                 _s_gltf_parse_u32 (state, &new_material->albedo_index);
 	      } else {
                 _s_gltf_skip (state);
@@ -380,7 +377,6 @@ static void _s_gltf_parse_materials (struct _s_gltf_state_t* state, rei_gltf_t* 
             _s_gltf_skip (state);
 	  }
 	}
-
       } else {
         _s_gltf_skip (state);
       }
@@ -388,7 +384,6 @@ static void _s_gltf_parse_materials (struct _s_gltf_state_t* state, rei_gltf_t* 
 
     REI_LOG_ERROR ("ALBEDO %u", new_material->albedo_index);
   }
-#endif
 }
 
 static void _s_gltf_parse_meshes (struct _s_gltf_state_t* state, rei_gltf_t* out) {
@@ -502,8 +497,7 @@ rei_result_e rei_gltf_load (const char* relative_path, rei_gltf_t* out) {
     } else if (_s_gltf_string_eq (&gltf_state, "textures", gltf_state.current_token)) {
       _s_gltf_parse_textures (&gltf_state, out);
     } else if (_s_gltf_string_eq (&gltf_state, "materials", gltf_state.current_token)) {
-      //_s_gltf_parse_materials (&gltf_state, out);
-      _s_gltf_skip (&gltf_state);
+      _s_gltf_parse_materials (&gltf_state, out);
     } else if (_s_gltf_string_eq (&gltf_state, "meshes", gltf_state.current_token)) {
       _s_gltf_parse_meshes (&gltf_state, out);
     } else {
@@ -523,7 +517,7 @@ void rei_gltf_destroy (rei_gltf_t* gltf) {
   for (u32 i = 0; i < gltf->mesh_count; ++i) free (gltf->meshes[i].primitives);
   free (gltf->meshes);
 
-  //free (gltf->materials);
+  free (gltf->materials);
   free (gltf->textures);
 
   for (u32 i = 0; i < gltf->image_count; ++i) free (gltf->images[i].uri);
