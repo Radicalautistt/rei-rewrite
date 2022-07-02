@@ -1,20 +1,11 @@
-#include <stdlib.h>
-#include <string.h>
 #include <memory.h>
 
-#include "rei_file.h"
+#include "rei_json.h"
 #include "rei_debug.h"
-#include "rei_defines.h"
 #include "rei_asset_loaders.h"
 
 #include <png.h>
 #include <jpeglib.h>
-#include <jsmn/jsmn.h>
-
-struct _s_gltf_state_t {
-  const char* json;
-  const jsmntok_t* current_token;
-};
 
 void rei_load_wav (const char* relativePath, rei_wav_t * out) {
   REI_LOG_INFO ("Loading a sound from " REI_ANSI_YELLOW "\"%s\"", relativePath);
@@ -125,92 +116,7 @@ void rei_load_jpeg (const char* relative_path, rei_image_t* out) {
   fclose (image_file);
 }
 
-static REI_FORCE_INLINE b8 _s_is_digit (char symbol) {
-  return symbol >= '0' && symbol <= '9';
-}
-
-static u32 _s_parse_u32 (const char* src) {
-  s32 result = 0;
-
-  while (*src && _s_is_digit (*src)) {
-    result = result * 10 + (*src - '0');
-    ++src;
-  }
-
-  return (u32) result;
-}
-
-static u64 _s_parse_u64 (const char* src) {
-  s64 result = 0;
-
-  while (*src && _s_is_digit (*src)) {
-    result = result * 10 + (*src - '0');
-    ++src;
-  }
-
-  return (u64) result;
-}
-
-static b8 _s_gltf_string_eq (const struct _s_gltf_state_t* state, const char* json_string, const jsmntok_t* json_token) {
-  return !strncmp (state->json + json_token->start, json_string, strlen (json_string));
-}
-
-static void _s_gltf_skip (struct _s_gltf_state_t* state) {
-  ++state->current_token;
-  const jsmntok_t* end = state->current_token + 1;
-
-  while (state->current_token < end) {
-    switch (state->current_token->type) {
-      case JSMN_OBJECT: end += state->current_token->size * 2; break;
-      case JSMN_ARRAY: end += state->current_token->size; break;
-      default: break;
-    }
-
-    ++state->current_token;
-  }
-}
-
-static void _s_gltf_parse_u32 (struct _s_gltf_state_t* state, u32* out) {
-  ++state->current_token;
-  REI_ASSERT (state->current_token->type == JSMN_PRIMITIVE);
-
-  *out = _s_parse_u32 (state->json + state->current_token->start);
-  ++state->current_token;
-}
-
-static void _s_gltf_parse_u64 (struct _s_gltf_state_t* state, u64* out) {
-  ++state->current_token;
-  REI_ASSERT (state->current_token->type == JSMN_PRIMITIVE);
-
-  *out = _s_parse_u64 (state->json + state->current_token->start);
-  ++state->current_token;
-}
-
-static void _s_gltf_parse_floats (struct _s_gltf_state_t* state, f32* out) {
-  ++state->current_token;
-  const jsmntok_t* root_token = state->current_token++;
-  REI_ASSERT (root_token->type == JSMN_ARRAY);
-
-  for (s32 i = 0; i < root_token->size; ++i) {
-    // TODO Write my own function for parsing floats.
-    out[i] = (f32) atof (state->json + state->current_token->start);
-    ++state->current_token;
-  }
-}
-
-static void _s_gltf_parse_string (struct _s_gltf_state_t* state, char* out) {
-  ++state->current_token;
-  REI_ASSERT (state->current_token->type == JSMN_STRING);
-
-  const char* start = state->json + state->current_token->start;
-  const char* end = start;
-  while (*end != '\"') ++end;
-
-  strncpy (out, start, end - start);
-  ++state->current_token;
-}
-
-static void _s_gltf_parse_nodes (struct _s_gltf_state_t* state, rei_gltf_t* out) {
+static void _s_gltf_parse_nodes (rei_json_state_t* state, rei_gltf_t* out) {
   ++state->current_token;
   const jsmntok_t* root_token = state->current_token++;
   REI_ASSERT (root_token->type == JSMN_ARRAY);
@@ -223,16 +129,16 @@ static void _s_gltf_parse_nodes (struct _s_gltf_state_t* state, rei_gltf_t* out)
     const jsmntok_t* current_node = state->current_token++;
 
     for (s32 j = 0; j < current_node->size; ++j) {
-      if (_s_gltf_string_eq (state, "mesh", state->current_token)) {
-        _s_gltf_parse_u32 (state, &new_node->mesh_index);
-      } else if (_s_gltf_string_eq (state, "scale", state->current_token)) {
-	_s_gltf_parse_floats (state, new_node->scale_vector);
+      if (rei_json_string_eq (state, "mesh", state->current_token)) {
+        rei_json_parse_u32 (state, &new_node->mesh_index);
+      } else if (rei_json_string_eq (state, "scale", state->current_token)) {
+	rei_json_parse_floats (state, new_node->scale_vector);
       }
     }
   }
 }
 
-static void _s_gltf_parse_buffer_views (struct _s_gltf_state_t* state, rei_gltf_t* out) {
+static void _s_gltf_parse_buffer_views (rei_json_state_t* state, rei_gltf_t* out) {
   ++state->current_token;
   const jsmntok_t* root_token = state->current_token++;
   REI_ASSERT (root_token->type == JSMN_ARRAY);
@@ -245,18 +151,18 @@ static void _s_gltf_parse_buffer_views (struct _s_gltf_state_t* state, rei_gltf_
     const jsmntok_t* current_buffer_view = state->current_token++;
 
     for (s32 j = 0; j < current_buffer_view->size; ++j) {
-      if (_s_gltf_string_eq (state, "buffer", state->current_token)) {
-        _s_gltf_parse_u32 (state, &new_buffer_view->buffer_index);
-      } else if (_s_gltf_string_eq (state, "byteLength", state->current_token)) {
-        _s_gltf_parse_u64 (state, &new_buffer_view->size);
-      } else if (_s_gltf_string_eq (state, "byteOffset", state->current_token)) {
-        _s_gltf_parse_u64 (state, &new_buffer_view->offset);
+      if (rei_json_string_eq (state, "buffer", state->current_token)) {
+        rei_json_parse_u32 (state, &new_buffer_view->buffer_index);
+      } else if (rei_json_string_eq (state, "byteLength", state->current_token)) {
+        rei_json_parse_u64 (state, &new_buffer_view->size);
+      } else if (rei_json_string_eq (state, "byteOffset", state->current_token)) {
+        rei_json_parse_u64 (state, &new_buffer_view->offset);
       }
     }
   }
 }
 
-static void _s_gltf_parse_accessors (struct _s_gltf_state_t* state, rei_gltf_t* out) {
+static void _s_gltf_parse_accessors (rei_json_state_t* state, rei_gltf_t* out) {
   ++state->current_token;
   const jsmntok_t* root_token = state->current_token++;
   REI_ASSERT (root_token->type == JSMN_ARRAY);
@@ -269,42 +175,42 @@ static void _s_gltf_parse_accessors (struct _s_gltf_state_t* state, rei_gltf_t* 
     const jsmntok_t* current_accessor = state->current_token++;
 
     for (s32 j = 0; j < current_accessor->size; ++j) {
-      if (_s_gltf_string_eq (state, "bufferView", state->current_token)) {
-        _s_gltf_parse_u32 (state, &new_accessor->buffer_view_index);
-      } else if (_s_gltf_string_eq (state, "count", state->current_token)) {
-        _s_gltf_parse_u32 (state, &new_accessor->count);
-      } else if (_s_gltf_string_eq (state, "byteOffset", state->current_token)) {
-        _s_gltf_parse_u64 (state, &new_accessor->byte_offset);
-      } else if (_s_gltf_string_eq (state, "componentType", state->current_token)) {
-        _s_gltf_parse_u32 (state, &new_accessor->component_type);
-      } else if (_s_gltf_string_eq (state, "type", state->current_token)) {
-        char type[16] = {0};
-	_s_gltf_parse_string (state, type);
+      if (rei_json_string_eq (state, "bufferView", state->current_token)) {
+        rei_json_parse_u32 (state, &new_accessor->buffer_view_index);
+      } else if (rei_json_string_eq (state, "count", state->current_token)) {
+        rei_json_parse_u32 (state, &new_accessor->count);
+      } else if (rei_json_string_eq (state, "byteOffset", state->current_token)) {
+        rei_json_parse_u64 (state, &new_accessor->byte_offset);
+      } else if (rei_json_string_eq (state, "componentType", state->current_token)) {
+        rei_json_parse_u32 (state, &new_accessor->component_type);
+      } else if (rei_json_string_eq (state, "type", state->current_token)) {
+        rei_string_view_t type;
+	rei_json_parse_string (state, &type);
 
-        if (!strcmp (type, "VEC2")) {
+        if (!strncmp (type.src, "VEC2", type.size)) {
           new_accessor->type = REI_GLTF_TYPE_VEC2;
-	} else if (!strcmp (type, "VEC3")) {
+	} else if (!strncmp (type.src, "VEC3", type.size)) {
           new_accessor->type = REI_GLTF_TYPE_VEC3;
-	} else if (!strcmp (type, "VEC4")) {
+	} else if (!strncmp (type.src, "VEC4", type.size)) {
           new_accessor->type = REI_GLTF_TYPE_VEC4;
-	} else if (!strcmp (type, "MAT2")) {
+	} else if (!strncmp (type.src, "MAT2", type.size)) {
           new_accessor->type = REI_GLTF_TYPE_MAT2;
-	} else if (!strcmp (type, "MAT3")) {
+	} else if (!strncmp (type.src, "MAT3", type.size)) {
           new_accessor->type = REI_GLTF_TYPE_MAT3;
-	} else if (!strcmp (type, "MAT4")) {
+	} else if (!strncmp (type.src, "MAT4", type.size)) {
           new_accessor->type = REI_GLTF_TYPE_MAT4;
-	} else if (!strcmp (type, "SCALAR")) {
+	} else if (!strncmp (type.src, "SCALAR", type.size)) {
           new_accessor->type = REI_GLTF_TYPE_SCALAR;
 	}
 
       } else {
-        _s_gltf_skip (state);
+        rei_json_skip (state);
       }
     }
   }
 }
 
-static void _s_gltf_parse_samplers (struct _s_gltf_state_t* state, rei_gltf_t* out) {
+static void _s_gltf_parse_samplers (rei_json_state_t* state, rei_gltf_t* out) {
   ++state->current_token;
   const jsmntok_t* root_token = state->current_token++;
   REI_ASSERT (root_token->type == JSMN_ARRAY);
@@ -317,20 +223,20 @@ static void _s_gltf_parse_samplers (struct _s_gltf_state_t* state, rei_gltf_t* o
     const jsmntok_t* current_sampler = state->current_token++;
 
     for (s32 j = 0; j < current_sampler->size; ++j) {
-      if (_s_gltf_string_eq (state, "magFilter", state->current_token)) {
-        _s_gltf_parse_u32 (state, &new_sampler->mag_filter);
-      } else if (_s_gltf_string_eq (state, "minFilter", state->current_token)) {
-        _s_gltf_parse_u32 (state, &new_sampler->mag_filter);
-      } else if (_s_gltf_string_eq (state, "wrapS", state->current_token)) {
-        _s_gltf_parse_u32 (state, &new_sampler->mag_filter);
-      } else if (_s_gltf_string_eq (state, "wrapT", state->current_token)) {
-        _s_gltf_parse_u32 (state, &new_sampler->mag_filter);
+      if (rei_json_string_eq (state, "magFilter", state->current_token)) {
+        rei_json_parse_u32 (state, &new_sampler->mag_filter);
+      } else if (rei_json_string_eq (state, "minFilter", state->current_token)) {
+        rei_json_parse_u32 (state, &new_sampler->mag_filter);
+      } else if (rei_json_string_eq (state, "wrapS", state->current_token)) {
+        rei_json_parse_u32 (state, &new_sampler->mag_filter);
+      } else if (rei_json_string_eq (state, "wrapT", state->current_token)) {
+        rei_json_parse_u32 (state, &new_sampler->mag_filter);
       }
     }
   }
 }
 
-static void _s_gltf_parse_images (struct _s_gltf_state_t* state, rei_gltf_t* out) {
+static void _s_gltf_parse_images (rei_json_state_t* state, rei_gltf_t* out) {
   ++state->current_token;
   const jsmntok_t* root_token = state->current_token++;
   REI_ASSERT (root_token->type == JSMN_ARRAY);
@@ -343,21 +249,21 @@ static void _s_gltf_parse_images (struct _s_gltf_state_t* state, rei_gltf_t* out
     const jsmntok_t* current_image = state->current_token++;
 
     for (s32 j = 0; j < current_image->size; ++j) {
-      if (_s_gltf_string_eq (state, "uri", state->current_token)) {
-        // FIXME Malloc strings properly.
-        char uri[128] = {0};
-	_s_gltf_parse_string (state, uri);
+      if (rei_json_string_eq (state, "uri", state->current_token)) {
+        rei_string_view_t uri;
+	rei_json_parse_string (state, &uri);
 
-	u64 size = strlen (uri);
-	new_image->uri = malloc (size + 1);
-	strcpy (new_image->uri, uri);
-      } else if (_s_gltf_string_eq (state, "mimeType", state->current_token)) {
-        char mime_type[16] = {0};
-	_s_gltf_parse_string (state, mime_type);
+	new_image->uri = malloc (uri.size + 1);
+	strncpy (new_image->uri, uri.src, uri.size);
+	new_image->uri[uri.size] = '\0';
 
-	if (!strcmp (mime_type, "image/jpeg")) {
+      } else if (rei_json_string_eq (state, "mimeType", state->current_token)) {
+        rei_string_view_t mime_type;
+	rei_json_parse_string (state, &mime_type);
+
+	if (!strncmp (mime_type.src, "image/jpeg", mime_type.size)) {
           new_image->mime_type = REI_GLTF_IMAGE_TYPE_JPEG;
-	} else if (!strcmp (mime_type, "image/png")) {
+	} else if (!strncmp (mime_type.src, "image/png", mime_type.size)) {
           new_image->mime_type = REI_GLTF_IMAGE_TYPE_PNG;
 	}
       }
@@ -365,7 +271,7 @@ static void _s_gltf_parse_images (struct _s_gltf_state_t* state, rei_gltf_t* out
   }
 }
 
-static void _s_gltf_parse_textures (struct _s_gltf_state_t* state, rei_gltf_t* out) {
+static void _s_gltf_parse_textures (rei_json_state_t* state, rei_gltf_t* out) {
   ++state->current_token;
   const jsmntok_t* root_token = state->current_token++;
   REI_ASSERT (root_token->type == JSMN_ARRAY);
@@ -378,16 +284,16 @@ static void _s_gltf_parse_textures (struct _s_gltf_state_t* state, rei_gltf_t* o
     const jsmntok_t* current_texture = state->current_token++;
 
     for (s32 j = 0; j < current_texture->size; ++j) {
-      if (_s_gltf_string_eq (state, "sampler", state->current_token)) {
-        _s_gltf_parse_u32 (state, &new_texture->sampler_index);
-      } else if (_s_gltf_string_eq (state, "source", state->current_token)) {
-        _s_gltf_parse_u32 (state, &new_texture->image_index);
+      if (rei_json_string_eq (state, "sampler", state->current_token)) {
+        rei_json_parse_u32 (state, &new_texture->sampler_index);
+      } else if (rei_json_string_eq (state, "source", state->current_token)) {
+        rei_json_parse_u32 (state, &new_texture->image_index);
       }
     }
   }
 }
 
-static void _s_gltf_parse_materials (struct _s_gltf_state_t* state, rei_gltf_t* out) {
+static void _s_gltf_parse_materials (rei_json_state_t* state, rei_gltf_t* out) {
   ++state->current_token;
   const jsmntok_t* root_token = state->current_token++;
   REI_ASSERT (root_token->type == JSMN_ARRAY);
@@ -400,34 +306,34 @@ static void _s_gltf_parse_materials (struct _s_gltf_state_t* state, rei_gltf_t* 
     const jsmntok_t* current_material = state->current_token++;
 
     for (s32 j = 0; j < current_material->size; ++j) {
-      if (_s_gltf_string_eq (state, "pbrMetallicRoughness", state->current_token)) {
+      if (rei_json_string_eq (state, "pbrMetallicRoughness", state->current_token)) {
         ++state->current_token;
         const jsmntok_t* pbr = state->current_token++;
 
 	for (s32 k = 0; k < pbr->size; ++k) {
-          if (_s_gltf_string_eq (state, "baseColorTexture", state->current_token)) {
+          if (rei_json_string_eq (state, "baseColorTexture", state->current_token)) {
 	    ++state->current_token;
             const jsmntok_t* albedo = state->current_token++;
 
 	    for (s32 m = 0; m < albedo->size; ++m) {
-	      if (_s_gltf_string_eq (state, "index", state->current_token)) {
-                _s_gltf_parse_u32 (state, &new_material->albedo_index);
+	      if (rei_json_string_eq (state, "index", state->current_token)) {
+                rei_json_parse_u32 (state, &new_material->albedo_index);
 	      } else {
-                _s_gltf_skip (state);
+                rei_json_skip (state);
 	      }
 	    }
 	  } else {
-            _s_gltf_skip (state);
+            rei_json_skip (state);
 	  }
 	}
       } else {
-        _s_gltf_skip (state);
+        rei_json_skip (state);
       }
     }
   }
 }
 
-static void _s_gltf_parse_meshes (struct _s_gltf_state_t* state, rei_gltf_t* out) {
+static void _s_gltf_parse_meshes (rei_json_state_t* state, rei_gltf_t* out) {
   ++state->current_token;
   const jsmntok_t* root_token = state->current_token++;
   REI_ASSERT (root_token->type == JSMN_ARRAY);
@@ -440,7 +346,7 @@ static void _s_gltf_parse_meshes (struct _s_gltf_state_t* state, rei_gltf_t* out
     const jsmntok_t* current_mesh = state->current_token++;
 
     for (s32 j = 0; j < current_mesh->size; ++j) {
-      if (_s_gltf_string_eq (state, "primitives", state->current_token)) {
+      if (rei_json_string_eq (state, "primitives", state->current_token)) {
 	++state->current_token;
 	const jsmntok_t* primitives = state->current_token++;
 	REI_ASSERT (primitives->type == JSMN_ARRAY);
@@ -453,32 +359,32 @@ static void _s_gltf_parse_meshes (struct _s_gltf_state_t* state, rei_gltf_t* out
 	  rei_gltf_primitive_t* new_primitive = &new_mesh->primitives[k];
 
 	  for (s32 l = 0; l < primitive->size; ++l) {
-	    if (_s_gltf_string_eq (state, "indices", state->current_token)) {
-              _s_gltf_parse_u32 (state, &new_primitive->indices_index);
-	    } else if (_s_gltf_string_eq (state, "material", state->current_token)) {
-              _s_gltf_parse_u32 (state, &new_primitive->material_index);
-	    } else if (_s_gltf_string_eq (state, "attributes", state->current_token)) {
+	    if (rei_json_string_eq (state, "indices", state->current_token)) {
+              rei_json_parse_u32 (state, &new_primitive->indices_index);
+	    } else if (rei_json_string_eq (state, "material", state->current_token)) {
+              rei_json_parse_u32 (state, &new_primitive->material_index);
+	    } else if (rei_json_string_eq (state, "attributes", state->current_token)) {
               ++state->current_token;
 	      const jsmntok_t* padla = state->current_token++;
 
 	      for (s32 m = 0; m < padla->size; ++m) {
-		if (_s_gltf_string_eq (state, "POSITION", state->current_token)) {
-                  _s_gltf_parse_u32 (state, &new_primitive->position_index);
-		} else if (_s_gltf_string_eq (state, "NORMAL", state->current_token)) {
-                  _s_gltf_parse_u32 (state, &new_primitive->normal_index);
-		} else if (_s_gltf_string_eq (state, "TEXCOORD_0", state->current_token)) {
-                  _s_gltf_parse_u32 (state, &new_primitive->uv_index);
+		if (rei_json_string_eq (state, "POSITION", state->current_token)) {
+                  rei_json_parse_u32 (state, &new_primitive->position_index);
+		} else if (rei_json_string_eq (state, "NORMAL", state->current_token)) {
+                  rei_json_parse_u32 (state, &new_primitive->normal_index);
+		} else if (rei_json_string_eq (state, "TEXCOORD_0", state->current_token)) {
+                  rei_json_parse_u32 (state, &new_primitive->uv_index);
 		} else {
-                  _s_gltf_skip (state);
+                  rei_json_skip (state);
 		}
 	      }
 	    } else {
-              _s_gltf_skip (state);
+              rei_json_skip (state);
 	    }
 	  }
 	}
       } else {
-        _s_gltf_skip (state);
+        rei_json_skip (state);
       }
     }
   }
@@ -504,49 +410,39 @@ rei_result_e rei_gltf_load (const char* relative_path, rei_gltf_t* out) {
   rei_file_t gltf;
   REI_CHECK (rei_map_file (relative_path, &gltf));
 
-  const char* json = (const char*) gltf.data;
+  rei_json_state_t json_state;
+  REI_CHECK (rei_json_tokenize ((const char*) gltf.data, gltf.size, &json_state));
 
-  jsmn_parser json_parser = {0, 0, 0};
-
-  s32 token_count = jsmn_parse (&json_parser, json, gltf.size, NULL, 0);
-  if (token_count <= 0) return REI_RESULT_INVALID_JSON;
-
-  jsmntok_t* json_tokens = malloc (sizeof *json_tokens * (u32) token_count);
-  struct _s_gltf_state_t gltf_state = {.json = json, .current_token = &json_tokens[1]};
-
-  jsmn_init (&json_parser);
-  jsmn_parse (&json_parser, json, gltf.size, json_tokens, (u32) token_count);
-
-  const jsmntok_t* root_token = &json_tokens[0];
+  const jsmntok_t* root_token = json_state.current_token++;
   REI_ASSERT (root_token->type == JSMN_OBJECT);
 
   for (s32 i = 0; i < root_token->size; ++i) {
-    if (_s_gltf_string_eq (&gltf_state, "asset", gltf_state.current_token)) {
-      _s_gltf_skip (&gltf_state);
-    } else if (_s_gltf_string_eq (&gltf_state, "nodes", gltf_state.current_token)) {
-      _s_gltf_parse_nodes (&gltf_state, out);
-    } else if (_s_gltf_string_eq (&gltf_state, "buffers", gltf_state.current_token)) {
-      _s_gltf_skip (&gltf_state);
-    } else if (_s_gltf_string_eq (&gltf_state, "bufferViews", gltf_state.current_token)) {
-      _s_gltf_parse_buffer_views (&gltf_state, out);
-    } else if (_s_gltf_string_eq (&gltf_state, "accessors", gltf_state.current_token)) {
-      _s_gltf_parse_accessors (&gltf_state, out);
-    } else if (_s_gltf_string_eq (&gltf_state, "samplers", gltf_state.current_token)) {
-      _s_gltf_parse_samplers (&gltf_state, out);
-    } else if (_s_gltf_string_eq (&gltf_state, "images", gltf_state.current_token)) {
-      _s_gltf_parse_images (&gltf_state, out);
-    } else if (_s_gltf_string_eq (&gltf_state, "textures", gltf_state.current_token)) {
-      _s_gltf_parse_textures (&gltf_state, out);
-    } else if (_s_gltf_string_eq (&gltf_state, "materials", gltf_state.current_token)) {
-      _s_gltf_parse_materials (&gltf_state, out);
-    } else if (_s_gltf_string_eq (&gltf_state, "meshes", gltf_state.current_token)) {
-      _s_gltf_parse_meshes (&gltf_state, out);
+    if (rei_json_string_eq (&json_state, "asset", json_state.current_token)) {
+      rei_json_skip (&json_state);
+    } else if (rei_json_string_eq (&json_state, "nodes", json_state.current_token)) {
+      _s_gltf_parse_nodes (&json_state, out);
+    } else if (rei_json_string_eq (&json_state, "buffers", json_state.current_token)) {
+      rei_json_skip (&json_state);
+    } else if (rei_json_string_eq (&json_state, "bufferViews", json_state.current_token)) {
+      _s_gltf_parse_buffer_views (&json_state, out);
+    } else if (rei_json_string_eq (&json_state, "accessors", json_state.current_token)) {
+      _s_gltf_parse_accessors (&json_state, out);
+    } else if (rei_json_string_eq (&json_state, "samplers", json_state.current_token)) {
+      _s_gltf_parse_samplers (&json_state, out);
+    } else if (rei_json_string_eq (&json_state, "images", json_state.current_token)) {
+      _s_gltf_parse_images (&json_state, out);
+    } else if (rei_json_string_eq (&json_state, "textures", json_state.current_token)) {
+      _s_gltf_parse_textures (&json_state, out);
+    } else if (rei_json_string_eq (&json_state, "materials", json_state.current_token)) {
+      _s_gltf_parse_materials (&json_state, out);
+    } else if (rei_json_string_eq (&json_state, "meshes", json_state.current_token)) {
+      _s_gltf_parse_meshes (&json_state, out);
     } else {
-      _s_gltf_skip (&gltf_state);
+      rei_json_skip (&json_state);
     }
   }
 
-  free (json_tokens);
+  free (json_state.json_tokens);
   rei_unmap_file (&gltf);
 
   return REI_RESULT_SUCCESS;

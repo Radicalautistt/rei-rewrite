@@ -55,4 +55,9 @@ typedef struct rei_image_t {
   u8* pixels;
 } rei_image_t;
 
+typedef struct rei_string_view_t {
+  u64 size;
+  const char* src;
+} rei_string_view_t;
+
 #endif /* REI_TYPES_H */
