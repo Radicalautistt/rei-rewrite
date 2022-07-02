@@ -290,4 +290,20 @@ void rei_vk_create_texture_mipmapped (
   rei_vk_image_t* out
 );
 
+void rei_vk_allocate_descriptors (
+  const rei_vk_device_t* device,
+  VkDescriptorPool pool,
+  VkDescriptorSetLayout layout,
+  u32 count,
+  VkDescriptorSet* out
+);
+
+void rei_vk_write_image_descriptors (
+  const rei_vk_device_t* device,
+  VkSampler sampler,
+  const VkImageView* src_views,
+  u32 count,
+  VkDescriptorSet* descriptors
+);
+
 #endif /* REI_VK_H */

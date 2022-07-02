@@ -1283,3 +1283,61 @@ void rei_vk_create_texture_mipmapped (
   rei_vk_end_imm_cmd (device, context, cmd_buffer);
   rei_vk_destroy_buffer (allocator, &staging);
 }
+
+void rei_vk_allocate_descriptors (
+  const rei_vk_device_t* device,
+  VkDescriptorPool pool,
+  VkDescriptorSetLayout layout,
+  u32 count,
+  VkDescriptorSet* out) {
+
+  // Allocate array of descriptor layouts and fill it with a given descriptor layout...
+  // It's weird, but it needs to be done in order to be able to allocate all descriptors in a single call.
+  VkDescriptorSetLayout* descriptor_layouts = alloca (sizeof *descriptor_layouts * count);
+  for (u32 i = 0; i < count; ++i) descriptor_layouts[i] = layout;
+
+  VkDescriptorSetAllocateInfo alloc_info = {
+    .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+    .pNext = NULL,
+    .descriptorPool = pool,
+    .descriptorSetCount = count,
+    .pSetLayouts = descriptor_layouts,
+  };
+
+  REI_VK_CHECK (vkAllocateDescriptorSets (device->handle, &alloc_info, out));
+}
+
+void rei_vk_write_image_descriptors (
+  const rei_vk_device_t* device,
+  VkSampler sampler,
+  const VkImageView* src_views,
+  u32 count,
+  VkDescriptorSet* descriptors) {
+
+  VkWriteDescriptorSet* writes = malloc (sizeof *writes * count);
+  VkDescriptorImageInfo* image_infos = malloc (sizeof *image_infos * count);
+
+  for (u32 i = 0; i < count; ++i) {
+    VkDescriptorImageInfo* new_image_info = &image_infos[i];
+    new_image_info->sampler = sampler;
+    new_image_info->imageView = src_views[i];
+    new_image_info->imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+    VkWriteDescriptorSet* new_write = &writes[i];
+    new_write->sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    new_write->pNext = NULL;
+    new_write->dstSet = descriptors[i];
+    new_write->dstBinding = 0;
+    new_write->dstArrayElement = 0;
+    new_write->descriptorCount = 1;
+    new_write->descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    new_write->pImageInfo = new_image_info;
+    new_write->pBufferInfo = NULL;
+    new_write->pTexelBufferView = NULL;
+  }
+
+  vkUpdateDescriptorSets (device->handle, count, writes, 0, NULL);
+
+  free (image_infos);
+  free (writes);
+}

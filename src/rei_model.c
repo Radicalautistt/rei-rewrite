@@ -236,53 +236,13 @@ void rei_create_model (
     REI_VK_CHECK (vkCreateDescriptorPool (vk_device->handle, &create_info, NULL, &out->descriptor_pool));
   }
 
-  {
-    out->descriptors = malloc (sizeof *out->descriptors * gltf.material_count);
+  out->descriptors = malloc (sizeof *out->descriptors * gltf.material_count);
+  rei_vk_allocate_descriptors (vk_device, out->descriptor_pool, vk_descriptor_layout, gltf.material_count, out->descriptors);
 
-    // Allocate array of descriptor layouts and fill it with a given descriptor layout...
-    // It's weird, but it needs to be done in order to be able to allocate all descriptors in a single call.
-    VkDescriptorSetLayout* descriptor_layouts = alloca (sizeof *descriptor_layouts * gltf.material_count);
-    for (u32 i = 0; i < gltf.material_count; ++i) descriptor_layouts[i] = vk_descriptor_layout;
+  VkImageView* texture_views = alloca (sizeof *texture_views * gltf.material_count);
+  for (u32 i = 0; i < gltf.material_count; ++i) texture_views[i] = out->textures[gltf.materials[i].albedo_index].view;
 
-    VkDescriptorSetAllocateInfo alloc_info = {
-      .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-      .pNext = NULL,
-      .descriptorPool = out->descriptor_pool,
-      .descriptorSetCount = gltf.material_count,
-      .pSetLayouts = descriptor_layouts,
-    };
-
-    REI_VK_CHECK (vkAllocateDescriptorSets (vk_device->handle, &alloc_info, out->descriptors));
-  }
-
-  VkWriteDescriptorSet* descriptor_writes = malloc (sizeof *descriptor_writes * gltf.material_count);
-  VkDescriptorImageInfo* image_infos = malloc (sizeof *image_infos * gltf.material_count);
-
-  for (u32 i = 0; i < gltf.material_count; ++i) {
-    const rei_gltf_material_t* current_material = &gltf.materials[i];
-
-    VkDescriptorImageInfo* new_image_info = &image_infos[i];
-    new_image_info->sampler = vk_sampler;
-    new_image_info->imageView = out->textures[current_material->albedo_index].view;
-    new_image_info->imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-    VkWriteDescriptorSet* new_descriptor_write = &descriptor_writes[i];
-    new_descriptor_write->sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    new_descriptor_write->pNext = NULL;
-    new_descriptor_write->dstSet = out->descriptors[i];
-    new_descriptor_write->dstBinding = 0;
-    new_descriptor_write->dstArrayElement = 0;
-    new_descriptor_write->descriptorCount = 1;
-    new_descriptor_write->descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    new_descriptor_write->pImageInfo = new_image_info;
-    new_descriptor_write->pBufferInfo = NULL;
-    new_descriptor_write->pTexelBufferView = NULL;
-  }
-
-  vkUpdateDescriptorSets (vk_device->handle, gltf.material_count, descriptor_writes, 0, NULL);
-
-  free (image_infos);
-  free (descriptor_writes);
+  rei_vk_write_image_descriptors (vk_device, vk_sampler, texture_views, gltf.material_count, out->descriptors);
 
   rei_gltf_destroy (&gltf);
 }
