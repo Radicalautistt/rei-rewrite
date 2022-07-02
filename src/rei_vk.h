@@ -178,6 +178,8 @@ VKAPI_ATTR VkBool32 VKAPI_CALL rei_vk_debug_callback (
   void* user_data
 );
 
+u32 rei_vk_check_extensions (const VkExtensionProperties* available, u32 available_count, const char* const* required, u32 required_count);
+
 void rei_vk_create_instance (const char* const* required_ext, u32 required_ext_count, VkInstance* out);
 
 b8 rei_vk_find_queue_indices (VkPhysicalDevice device, VkSurfaceKHR surface, rei_vk_queue_indices_t* out);

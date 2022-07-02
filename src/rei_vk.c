@@ -61,29 +61,36 @@ VKAPI_ATTR VkBool32 VKAPI_CALL rei_vk_debug_callback (
   return VK_FALSE;
 }
 
-void rei_vk_create_instance (const char* const* required_ext, u32 required_ext_count, VkInstance* out) {
-  // Check support for required extensions.
-  u32 available_count = 0;
-  REI_VK_CHECK (vkEnumerateInstanceExtensionProperties (NULL, &available_count, NULL));
-
-  VkExtensionProperties* available = alloca (sizeof *available * available_count);
-  REI_VK_CHECK (vkEnumerateInstanceExtensionProperties (NULL, &available_count, available));
-
+u32 rei_vk_check_extensions (const VkExtensionProperties* available, u32 available_count, const char* const* required, u32 required_count) {
   u32 matched_count = 0;
 
-  for (u32 i = 0; i < required_ext_count; ++i) {
+  for (u32 i = 0; i < required_count; ++i) {
     for (u32 j = 0; j < available_count; ++j) {
-      if (!strcmp (required_ext[i], available[j].extensionName)) {
-	++matched_count;
+      if (!strcmp (available[j].extensionName, required[i])) {
+        ++matched_count;
 	break;
       }
     }
   }
 
-  if (matched_count != required_ext_count) {
-    REI_LOG_STR_ERROR ("Vk initialization failure: required vulkan extensions aren't supported by this device.");
-    for (u32 i = 0; i < required_ext_count; ++i) REI_LOG_ERROR ("\t%s", required_ext[i]);
-    exit (EXIT_FAILURE);
+  return matched_count;
+}
+
+void rei_vk_create_instance (const char* const* required_ext, u32 required_ext_count, VkInstance* out) {
+  { // Check support for required extensions.
+    u32 available_count = 0;
+    REI_VK_CHECK (vkEnumerateInstanceExtensionProperties (NULL, &available_count, NULL));
+
+    VkExtensionProperties* available = alloca (sizeof *available * available_count);
+    REI_VK_CHECK (vkEnumerateInstanceExtensionProperties (NULL, &available_count, available));
+
+    u32 matched_count = rei_vk_check_extensions (available, available_count, required_ext, required_ext_count);
+
+    if (matched_count != required_ext_count) {
+      REI_LOG_STR_ERROR ("Vk initialization failure: required vulkan extensions aren't supported by this device.");
+      for (u32 i = 0; i < required_ext_count; ++i) REI_LOG_ERROR ("\t%s", required_ext[i]);
+      exit (EXIT_FAILURE);
+    }
   }
 
   VkInstanceCreateInfo create_info = {
@@ -153,7 +160,6 @@ void rei_vk_choose_gpu (
   REI_VK_CHECK (vkEnumeratePhysicalDevices (instance, &device_count, devices));
 
   for (u32 i = 0; i < device_count; ++i) {
-    u32 matched_count = 0;
     VkPhysicalDevice current = devices[i];
 
     u32 ext_count = 0;
@@ -162,14 +168,7 @@ void rei_vk_choose_gpu (
     VkExtensionProperties* extensions = alloca (sizeof *extensions * ext_count);
     REI_VK_CHECK (vkEnumerateDeviceExtensionProperties (current, NULL, &ext_count, extensions));
 
-    for (u32 j = 0; j < required_ext_count; ++j) {
-      for (u32 k = 0; k < ext_count; ++k) {
-        if (!strcmp (extensions[k].extensionName, required_ext[j])) {
-          ++matched_count;
-          break;
-        }
-      }
-    }
+    const u32 matched_ext_count = rei_vk_check_extensions (extensions, ext_count, required_ext, required_ext_count);
 
     u32 format_count = 0, present_mode_count = 0;
     REI_VK_CHECK (vkGetPhysicalDeviceSurfaceFormatsKHR (current, surface, &format_count, NULL));
@@ -179,7 +178,7 @@ void rei_vk_choose_gpu (
     const b8 supports_swapchain = format_count && present_mode_count;
     const b8 has_queue_families = rei_vk_find_queue_indices (current, surface, &indices);
 
-    if (has_queue_families && supports_swapchain && (matched_count == required_ext_count)) {
+    if (has_queue_families && supports_swapchain && (matched_ext_count == required_ext_count)) {
       *out = current;
       break;
     }
@@ -689,7 +688,6 @@ u32 rei_vk_begin_frame (
   VkCommandBuffer cmd_buffer = current_frame->cmd_buffer;
   VkFence submit_fence = current_frame->submit_fence;
   VkSemaphore present_semaphore = current_frame->present_semaphore;
-  VkSemaphore render_semaphore = current_frame->render_semaphore;
 
   REI_VK_CHECK (vkWaitForFences (device->handle, 1, &submit_fence, VK_TRUE, ~0ull));
   REI_VK_CHECK (vkResetFences (device->handle, 1, &submit_fence));
