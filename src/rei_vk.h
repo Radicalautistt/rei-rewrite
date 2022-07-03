@@ -11,6 +11,7 @@
 
 #include <volk/volk.h>
 
+#include "rei_asset.h"
 #include "rei_logger.h"
 
 #define REI_VK_VERSION VK_API_VERSION_1_0
@@ -278,7 +279,7 @@ void rei_vk_create_texture (
   const rei_vk_device_t* device,
   VmaAllocator allocator,
   const rei_vk_imm_ctxt_t* context,
-  const rei_image_t* src,
+  const rei_texture_t* src,
   rei_vk_image_t* out
 );
 

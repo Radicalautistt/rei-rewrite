@@ -6,6 +6,9 @@ const char* rei_show_result (rei_result_e result) {
   switch (result) {
     SHOW_RESULT (SUCCESS);
     SHOW_RESULT (FILE_DOES_NOT_EXIST);
+    SHOW_RESULT (INVALID_JSON);
+    SHOW_RESULT (INVALID_FILE_PATH);
+    SHOW_RESULT (UNSUPPORTED_FILE_TYPE);
     default: return "Unknown result...";
   }
 

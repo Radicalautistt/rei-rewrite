@@ -1,6 +1,7 @@
 #include <memory.h>
 #include <alloca.h>
 
+#include "rei_asset.h"
 #include "rei_model.h"
 #include "rei_debug.h"
 #include "rei_math.inl"
@@ -8,7 +9,7 @@
 
 #include <VulkanMemoryAllocator/include/vk_mem_alloc.h>
 
-// Quick sort gltf primitives by material index to later form batches of them.
+// Quick sort (in-place) gltf primitives by material index to later form batches of them.
 static void _s_sort_gltf_primitives (rei_gltf_primitive_t* primitives, u32 low, u32 high) {
   if (low < high) {
     u32 left = low - 1;
@@ -209,15 +210,16 @@ void rei_create_model (
 
       strcpy (filename + 1, current_image->uri);
 
-      rei_image_t image;
-      if (current_image->mime_type == REI_GLTF_IMAGE_TYPE_JPEG) {
-        rei_load_jpeg (full_path, &image);
-      } else {
-        rei_load_png (full_path, &image);
+      rei_texture_t new_texture;
+
+      char* ext = strrchr (full_path, '.');
+      if (ext++) {
+	strcpy (ext, "rtex");
+	rei_texture_load (full_path, &new_texture);
       }
 
-      rei_vk_create_texture (vk_device, vk_allocator, vk_imm_ctxt, &image, &out->textures[i]);
-      free (image.pixels);
+      rei_vk_create_texture (vk_device, vk_allocator, vk_imm_ctxt, &new_texture, &out->textures[i]);
+      free (new_texture.compressed_data);
     }
   }
 

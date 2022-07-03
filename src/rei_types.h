@@ -26,7 +26,8 @@ typedef enum rei_result_e {
   REI_RESULT_SUCCESS,
   REI_RESULT_INVALID_JSON,
   REI_RESULT_INVALID_FILE_PATH,
-  REI_RESULT_FILE_DOES_NOT_EXIST
+  REI_RESULT_FILE_DOES_NOT_EXIST,
+  REI_RESULT_UNSUPPORTED_FILE_TYPE
 } rei_result_e;
 
 typedef struct rei_vec2_t {f32 x, y;} rei_vec2_t;

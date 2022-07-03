@@ -8,6 +8,7 @@
 #include "rei_debug.h"
 #include "rei_defines.h"
 
+#include <lz4/lib/lz4.h>
 #include <VulkanMemoryAllocator/include/vk_mem_alloc.h>
 
 const char* rei_vk_show_error (VkResult error) {
@@ -1020,7 +1021,7 @@ void rei_vk_create_texture (
   const rei_vk_device_t* device,
   VmaAllocator allocator,
   const rei_vk_imm_ctxt_t* context,
-  const rei_image_t* src,
+  const rei_texture_t* src,
   rei_vk_image_t* out) {
 
   rei_vk_buffer_t staging;
@@ -1038,7 +1039,7 @@ void rei_vk_create_texture (
   );
 
   REI_VK_CHECK (vmaMapMemory (allocator, staging.memory, &staging.mapped));
-  memcpy (staging.mapped, src->pixels, image_size);
+  LZ4_decompress_safe (src->compressed_data, (char*) staging.mapped, src->compressed_size, image_size);
   vmaUnmapMemory (allocator, staging.memory);
 
   {
