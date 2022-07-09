@@ -1007,7 +1007,13 @@ void rei_vk_transition_image_cmd (VkCommandBuffer cmd_buffer, const rei_vk_image
   vkCmdPipelineBarrier (cmd_buffer, trans_info->src_stage, trans_info->dst_stage, 0, 0, NULL, 0, NULL, 1, &barrier);
 }
 
-void rei_vk_copy_buffer_cmd (VkCommandBuffer cmd_buffer, u64 size, u64 src_offset, const rei_vk_buffer_t* src, rei_vk_buffer_t* dst) {
+void rei_vk_copy_buffer_cmd (
+  VkCommandBuffer cmd_buffer,
+  u64 size,
+  u64 src_offset,
+  const rei_vk_buffer_t* restrict src,
+  rei_vk_buffer_t* restrict dst) {
+
   VkBufferCopy copy_info = {
     .srcOffset = src_offset,
     .dstOffset = 0,

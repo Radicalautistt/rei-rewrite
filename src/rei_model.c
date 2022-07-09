@@ -37,11 +37,13 @@ static void _s_sort_gltf_primitives (rei_gltf_primitive_t* primitives, u32 low, 
   }
 }
 
-static void* _s_get_gltf_accessor_data (const rei_gltf_t* gltf, u32 index) {
+static void* _s_get_gltf_accessor_data (const rei_gltf_t* const gltf, u32 index) {
   const rei_gltf_accessor_t* accessor = &gltf->accessors[index];
   const rei_gltf_buffer_view_t* buffer_view = &gltf->buffer_views[accessor->buffer_view_index];
 
-  return &((u8*)gltf->buffer.data)[accessor->byte_offset + buffer_view->offset];
+  const rei_file_t* buffer = &gltf->buffers[buffer_view->buffer_index];
+
+  return buffer->data + accessor->byte_offset + buffer_view->offset;
 }
 
 void rei_create_model (

@@ -269,7 +269,14 @@ void rei_vk_destroy_imm_ctxt (const rei_vk_device_t* device, rei_vk_imm_ctxt_t* 
 void rei_vk_start_imm_cmd (const rei_vk_device_t* device, const rei_vk_imm_ctxt_t* context, VkCommandBuffer* out);
 
 void rei_vk_transition_image_cmd (VkCommandBuffer cmd_buffer, const rei_vk_image_trans_info_t* trans_info, VkImage image);
-void rei_vk_copy_buffer_cmd (VkCommandBuffer cmd_buffer, u64 size, u64 src_offset, const rei_vk_buffer_t* src, rei_vk_buffer_t* dst);
+
+void rei_vk_copy_buffer_cmd (
+  VkCommandBuffer cmd_buffer,
+  u64 size,
+  u64 src_offset,
+  const rei_vk_buffer_t* restrict src,
+  rei_vk_buffer_t* restrict dst
+);
 
 void rei_vk_end_imm_cmd (const rei_vk_device_t* device, const rei_vk_imm_ctxt_t* context, VkCommandBuffer cmd_buffer);
 

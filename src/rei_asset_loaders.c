@@ -138,6 +138,50 @@ static void _s_gltf_parse_nodes (rei_json_state_t* state, rei_gltf_t* out) {
   }
 }
 
+static void _s_gltf_parse_buffers (const char* const gltf_path, rei_json_state_t* state, rei_gltf_t* out) {
+  ++state->current_token;
+  const jsmntok_t* root_token = state->current_token++;
+  REI_ASSERT (root_token->type == JSMN_ARRAY);
+
+  out->buffer_count = (u32) root_token->size;
+  out->buffers = malloc (sizeof *out->buffers * out->buffer_count);
+
+  for (s32 i = 0; i < root_token->size; ++i) {
+    rei_file_t* new_buffer = &out->buffers[i];
+    const jsmntok_t* current_buffer = state->current_token++;
+
+    for (s32 j = 0; j < current_buffer->size; ++j) {
+      if (rei_json_string_eq (state, "byteLength", state->current_token)) {
+        rei_json_skip (state);
+      } else if (rei_json_string_eq (state, "uri", state->current_token)) {
+        rei_string_view_t uri;
+	rei_json_parse_string (state, &uri);
+
+	char buffer_path[128] = {0};
+	char* slash_pos = strrchr (gltf_path, '/');
+
+	if (slash_pos++) {
+	  strncpy (buffer_path, gltf_path, slash_pos - gltf_path);
+          strncpy (buffer_path + strlen (buffer_path), uri.src, uri.size);
+	}
+
+	REI_LOG_STR_ERROR (buffer_path);
+	REI_CHECK (rei_map_file (buffer_path, new_buffer));
+      }
+    }
+  }
+}
+
+static void _s_gltf_init_array (rei_json_state_t* state, u32* out_count, u32 data_size, void** out_data) {
+  ++state->current_token;
+  REI_ASSERT (state->current_token->type == JSMN_ARRAY);
+
+  *out_count = (u32) state->current_token->size;
+  *out_data = malloc (data_size * *out_count);
+
+  ++state->current_token;
+}
+
 static void _s_gltf_parse_buffer_views (rei_json_state_t* state, rei_gltf_t* out) {
   ++state->current_token;
   const jsmntok_t* root_token = state->current_token++;
@@ -333,6 +377,45 @@ static void _s_gltf_parse_materials (rei_json_state_t* state, rei_gltf_t* out) {
   }
 }
 
+static void _s_gltf_parse_primitives (rei_json_state_t* state, rei_gltf_mesh_t* out) {
+  ++state->current_token;
+  const jsmntok_t* root_token = state->current_token++;
+  REI_ASSERT (root_token->type == JSMN_ARRAY);
+
+  out->primitive_count = (u32) root_token->size;
+  out->primitives = malloc (sizeof *out->primitives * out->primitive_count);
+
+  for (s32 i = 0; i < root_token->size; ++i) {
+    const jsmntok_t* primitive = state->current_token++;
+    rei_gltf_primitive_t* new_primitive = &out->primitives[i];
+
+    for (s32 j = 0; j < primitive->size; ++j) {
+      if (rei_json_string_eq (state, "indices", state->current_token)) {
+        rei_json_parse_u32 (state, &new_primitive->indices_index);
+      } else if (rei_json_string_eq (state, "material", state->current_token)) {
+        rei_json_parse_u32 (state, &new_primitive->material_index);
+      } else if (rei_json_string_eq (state, "attributes", state->current_token)) {
+        ++state->current_token;
+        const jsmntok_t* current_attribute = state->current_token++;
+
+        for (s32 k = 0; k < current_attribute->size; ++k) {
+  	  if (rei_json_string_eq (state, "POSITION", state->current_token)) {
+            rei_json_parse_u32 (state, &new_primitive->position_index);
+  	  } else if (rei_json_string_eq (state, "NORMAL", state->current_token)) {
+            rei_json_parse_u32 (state, &new_primitive->normal_index);
+  	  } else if (rei_json_string_eq (state, "TEXCOORD_0", state->current_token)) {
+            rei_json_parse_u32 (state, &new_primitive->uv_index);
+  	  } else {
+            rei_json_skip (state);
+  	  }
+        }
+      } else {
+        rei_json_skip (state);
+      }
+    }
+  }
+}
+
 static void _s_gltf_parse_meshes (rei_json_state_t* state, rei_gltf_t* out) {
   ++state->current_token;
   const jsmntok_t* root_token = state->current_token++;
@@ -347,42 +430,7 @@ static void _s_gltf_parse_meshes (rei_json_state_t* state, rei_gltf_t* out) {
 
     for (s32 j = 0; j < current_mesh->size; ++j) {
       if (rei_json_string_eq (state, "primitives", state->current_token)) {
-	++state->current_token;
-	const jsmntok_t* primitives = state->current_token++;
-	REI_ASSERT (primitives->type == JSMN_ARRAY);
-
-	new_mesh->primitive_count = (u64) primitives->size;
-	new_mesh->primitives = malloc (sizeof *new_mesh->primitives * new_mesh->primitive_count);
-
-	for (s32 k = 0; k < primitives->size; ++k) {
-	  const jsmntok_t* primitive = state->current_token++;
-	  rei_gltf_primitive_t* new_primitive = &new_mesh->primitives[k];
-
-	  for (s32 l = 0; l < primitive->size; ++l) {
-	    if (rei_json_string_eq (state, "indices", state->current_token)) {
-              rei_json_parse_u32 (state, &new_primitive->indices_index);
-	    } else if (rei_json_string_eq (state, "material", state->current_token)) {
-              rei_json_parse_u32 (state, &new_primitive->material_index);
-	    } else if (rei_json_string_eq (state, "attributes", state->current_token)) {
-              ++state->current_token;
-	      const jsmntok_t* padla = state->current_token++;
-
-	      for (s32 m = 0; m < padla->size; ++m) {
-		if (rei_json_string_eq (state, "POSITION", state->current_token)) {
-                  rei_json_parse_u32 (state, &new_primitive->position_index);
-		} else if (rei_json_string_eq (state, "NORMAL", state->current_token)) {
-                  rei_json_parse_u32 (state, &new_primitive->normal_index);
-		} else if (rei_json_string_eq (state, "TEXCOORD_0", state->current_token)) {
-                  rei_json_parse_u32 (state, &new_primitive->uv_index);
-		} else {
-                  rei_json_skip (state);
-		}
-	      }
-	    } else {
-              rei_json_skip (state);
-	    }
-	  }
-	}
+        _s_gltf_parse_primitives (state, new_mesh);
       } else {
         rei_json_skip (state);
       }
@@ -390,22 +438,113 @@ static void _s_gltf_parse_meshes (rei_json_state_t* state, rei_gltf_t* out) {
   }
 }
 
-rei_result_e rei_gltf_load (const char* relative_path, rei_gltf_t* out) {
-  REI_LOG_INFO ("Loading GLTF model from " REI_ANSI_YELLOW "\"%s\"", relative_path);
+#if 0
+static void _s_gltf_parse_animation_channels (rei_json_state_t* state, rei_gltf_animation_t* out) {
+  ++state->current_token;
+  const jsmntok_t* root_token = state->current_token++;
+  REI_ASSERT (root_token->type == JSMN_ARRAY);
 
-  { // Load geometry buffer.
-    char buffer_path[128] = {0};
-    strcpy (buffer_path, relative_path);
+  out->channel_count = (u32) root_token->size;
+  out->channels = malloc (sizeof *out->channels * out->channel_count);
 
-    char* extension = strrchr (buffer_path, '.');
+  for (s32 i = 0; i < root_token->size; ++i) {
+    rei_gltf_animation_channel_t* new_channel = &out->channels[i];
+    const jsmntok_t* current_channel = state->current_token++;
 
-    if (extension) {
-      memcpy (extension + 1, "bin", 4);
-      REI_CHECK (rei_map_file (buffer_path, &out->buffer));
-    } else {
-      return REI_RESULT_INVALID_FILE_PATH;
+    for (s32 j = 0; j < current_channel->size; ++j) {
+      if (rei_json_string_eq (state, "sampler", state->current_token)) {
+        rei_json_parse_u32 (state, &new_channel->sampler_index);
+      } else if (rei_json_string_eq (state, "target", state->current_token)) {
+        ++state->current_token;
+	const jsmntok_t* current_target = state->current_token++;
+
+	for (s32 k = 0; k < current_target->size; ++k) {
+          if (rei_json_string_eq (state, "node", state->current_token)) {
+            rei_json_parse_u32 (state, &new_channel->target_node_index);
+	  } else if (rei_json_string_eq (state, "path", state->current_token)) {
+            rei_string_view_t path;
+	    rei_json_parse_string (state, &path);
+
+	    if (!strncmp (path.src, "rotation", path.size)) {
+              new_channel->path = REI_GLTF_CHANNEL_PATH_ROTATION;
+	    } else if (!strncmp (path.src, "scale", path.size)) {
+              new_channel->path = REI_GLTF_CHANNEL_PATH_SCALE;
+	    } else if (!strncmp (path.src, "translation", path.size)) {
+              new_channel->path = REI_GLTF_CHANNEL_PATH_TRANSLATION;
+	    } else {
+              new_channel->path = REI_GLTF_CHANNEL_PATH_WEIGHTS;
+	    }
+	  } else {
+            rei_json_skip (state);
+	  }
+	}
+      } else {
+        rei_json_skip (state);
+      }
+    }
+
+    REI_LOG_ERROR ("Animation channel %d: path %d, sampler %u, node %u", i, new_channel->path, new_channel->sampler_index, new_channel->target_node_index);
+
+  }
+}
+
+static void _s_gltf_parse_animation_samplers (rei_json_state_t* state, rei_gltf_animation_t* out) {
+  ++state->current_token;
+  const jsmntok_t* root_token = state->current_token++;
+  REI_ASSERT (root_token->type == JSMN_ARRAY);
+
+  out->sampler_count = (u32) root_token->size;
+  out->samplers = malloc (sizeof *out->samplers * out->sampler_count);
+
+  for (s32 i = 0; i < root_token->size; ++i) {
+    rei_gltf_animation_sampler_t* new_sampler = &out->samplers[i];
+    const jsmntok_t* current_sampler = state->current_token++;
+
+    for (s32 j = 0; j < current_sampler->size; ++j) {
+      if (rei_json_string_eq (state, "input", state->current_token)) {
+        rei_json_parse_u32 (state, &new_sampler->input);
+      } else if (rei_json_string_eq (state, "interpolation", state->current_token)) {
+        rei_string_view_t interpolation;
+        rei_json_parse_string (state, &interpolation);
+
+	if (!strncmp (interpolation.src, "LINEAR", interpolation.size)) {
+          new_sampler->interpolation = REI_GLTF_INTERPOLATION_LINEAR;
+	} else {
+          REI_LOG_ERROR ("Unknown animation sampler interpolation %.*s", interpolation.size, interpolation.src);
+	}
+      } else if (rei_json_string_eq (state, "output", state->current_token)) {
+        rei_json_parse_u32 (state, &new_sampler->output);
+      }
+    }
+    REI_LOG_WARN ("Animation sampler %d: input %u, interpolation %d, output %u", i, new_sampler->input, new_sampler->interpolation, new_sampler->output);
+  }
+}
+
+static void _s_gltf_parse_animations (rei_json_state_t* state, rei_gltf_t* out) {
+  ++state->current_token;
+  const jsmntok_t* root_token = state->current_token++;
+  REI_ASSERT (root_token->type == JSMN_ARRAY);
+
+  out->animation_count = (u32) root_token->size;
+  out->animations = malloc (sizeof *out->animations * out->animation_count);
+
+  for (s32 i = 0; i < root_token->size; ++i) {
+    rei_gltf_animation_t* new_animation = &out->animations[i];
+    const jsmntok_t* current_animation = state->current_token++;
+
+    for (s32 j = 0; j < current_animation->size; ++j) {
+      if (rei_json_string_eq (state, "channels", state->current_token)) {
+        _s_gltf_parse_animation_channels (state, new_animation);
+      } else {
+        _s_gltf_parse_animation_samplers (state, new_animation);
+      }
     }
   }
+}
+#endif
+
+rei_result_e rei_gltf_load (const char* relative_path, rei_gltf_t* out) {
+  REI_LOG_INFO ("Loading GLTF model from " REI_ANSI_YELLOW "\"%s\"", relative_path);
 
   rei_file_t gltf;
   REI_CHECK (rei_map_file (relative_path, &gltf));
@@ -416,13 +555,13 @@ rei_result_e rei_gltf_load (const char* relative_path, rei_gltf_t* out) {
   const jsmntok_t* root_token = json_state.current_token++;
   REI_ASSERT (root_token->type == JSMN_OBJECT);
 
+  out->animations = NULL;
+
   for (s32 i = 0; i < root_token->size; ++i) {
-    if (rei_json_string_eq (&json_state, "asset", json_state.current_token)) {
-      rei_json_skip (&json_state);
-    } else if (rei_json_string_eq (&json_state, "nodes", json_state.current_token)) {
+    if (rei_json_string_eq (&json_state, "nodes", json_state.current_token)) {
       _s_gltf_parse_nodes (&json_state, out);
     } else if (rei_json_string_eq (&json_state, "buffers", json_state.current_token)) {
-      rei_json_skip (&json_state);
+      _s_gltf_parse_buffers (relative_path, &json_state, out);
     } else if (rei_json_string_eq (&json_state, "bufferViews", json_state.current_token)) {
       _s_gltf_parse_buffer_views (&json_state, out);
     } else if (rei_json_string_eq (&json_state, "accessors", json_state.current_token)) {
@@ -437,6 +576,11 @@ rei_result_e rei_gltf_load (const char* relative_path, rei_gltf_t* out) {
       _s_gltf_parse_materials (&json_state, out);
     } else if (rei_json_string_eq (&json_state, "meshes", json_state.current_token)) {
       _s_gltf_parse_meshes (&json_state, out);
+#if 0
+    } else if (rei_json_string_eq (&json_state, "animations", json_state.current_token)) {
+      REI_LOG_STR_INFO ("Parsing animations...");
+      _s_gltf_parse_animations (&json_state, out);
+#endif
     } else {
       rei_json_skip (&json_state);
     }
@@ -449,7 +593,18 @@ rei_result_e rei_gltf_load (const char* relative_path, rei_gltf_t* out) {
 }
 
 void rei_gltf_destroy (rei_gltf_t* gltf) {
-  rei_unmap_file (&gltf->buffer);
+  for (u32 i = 0; i < gltf->buffer_count; ++i) rei_unmap_file (&gltf->buffers[i]);
+
+  if (gltf->animations) {
+    for (u32 i = 0; i < gltf->animation_count; ++i) {
+      rei_gltf_animation_t* current_animation = &gltf->animations[i];
+
+      for (u32 j = 0; j < current_animation->channel_count; ++j) free (current_animation->channels);
+      for (u32 j = 0; j < current_animation->sampler_count; ++j) free (current_animation->samplers);
+    }
+
+    free (gltf->animations);
+  }
 
   for (u32 i = 0; i < gltf->mesh_count; ++i) free (gltf->meshes[i].primitives);
   free (gltf->meshes);

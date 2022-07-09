@@ -38,6 +38,17 @@ typedef enum rei_gltf_image_type_e {
   REI_GLTF_IMAGE_TYPE_JPEG
 } rei_gltf_image_type_e;
 
+typedef enum rei_gltf_interpolation_e {
+  REI_GLTF_INTERPOLATION_LINEAR
+} rei_gltf_interpolation_e;
+
+typedef enum rei_gltf_channel_path_e {
+  REI_GLTF_CHANNEL_PATH_SCALE,
+  REI_GLTF_CHANNEL_PATH_WEIGHTS,
+  REI_GLTF_CHANNEL_PATH_ROTATION,
+  REI_GLTF_CHANNEL_PATH_TRANSLATION
+} rei_gltf_channel_path_e;
+
 typedef struct rei_wav_t {
   u16 bits_per_sample;
   u16 channel_count;
@@ -103,9 +114,26 @@ typedef struct rei_gltf_mesh_t {
   rei_gltf_primitive_t* primitives;
 } rei_gltf_mesh_t;
 
-typedef struct rei_gltf_t {
-  rei_file_t buffer;
+typedef struct rei_gltf_animation_sampler_t {
+  u32 input;
+  rei_gltf_interpolation_e interpolation;
+  u32 output;
+} rei_gltf_animation_sampler_t;
 
+typedef struct rei_gltf_animation_channel_t {
+  u32 sampler_index;
+  u32 target_node_index;
+  rei_gltf_channel_path_e path;
+} rei_gltf_animation_channel_t;
+
+typedef struct rei_gltf_animation_t {
+  u32 channel_count;
+  u32 sampler_count;
+  rei_gltf_animation_channel_t* channels;
+  rei_gltf_animation_sampler_t* samplers;
+} rei_gltf_animation_t;
+
+typedef struct rei_gltf_t {
   u32 node_count;
   u32 mesh_count;
   u32 image_count;
@@ -114,6 +142,10 @@ typedef struct rei_gltf_t {
   u32 material_count;
   u32 accessor_count;
   u32 buffer_view_count;
+  u32 animation_count;
+  u32 buffer_count;
+
+  rei_file_t* buffers;
 
   rei_gltf_node_t* nodes;
   rei_gltf_mesh_t* meshes;
@@ -122,6 +154,7 @@ typedef struct rei_gltf_t {
   rei_gltf_texture_t* textures;
   rei_gltf_material_t* materials;
   rei_gltf_accessor_t* accessors;
+  rei_gltf_animation_t* animations;
   rei_gltf_buffer_view_t* buffer_views;
 } rei_gltf_t;
 
