@@ -12,6 +12,7 @@ typedef struct rei_json_state_t {
   const jsmntok_t* current_token;
 } rei_json_state_t;
 
+void rei_parse_u8 (const char* src, u8* out);
 void rei_parse_u32 (const char* src, u32* out);
 void rei_parse_u64 (const char* src, u64* out);
 

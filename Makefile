@@ -5,7 +5,7 @@ third_party_obj += third-party/build-outs/vma.o
 
 include_paths = -isystem third-party
 link_paths = -L third-party/build-outs
-links = -lm -lstdc++ -lxcb -lpng -ljpeg -lcimgui -lopenal -llz4
+links = -lm -lstdc++ -lxcb -lpng -ljpeg -lcimgui -lopenal -llz4 -lyxml
 
 flags = -std=c99 -Wall -Wpadded -Wextra -Wconversion -Og -march=native -pipe -fno-exceptions -ggdb
 src = $(call rwildcard, src, *.c, *.h)

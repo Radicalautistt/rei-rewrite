@@ -1,10 +1,11 @@
 #include <memory.h>
 
-#include "rei_json.h"
+#include "rei_parse.h"
 #include "rei_debug.h"
 #include "rei_asset_loaders.h"
 
 #include <png.h>
+#include <yxml/yxml.h>
 #include <jpeglib.h>
 
 void rei_load_wav (const char* relativePath, rei_wav_t * out) {
@@ -114,6 +115,104 @@ void rei_load_jpeg (const char* relative_path, rei_image_t* out) {
   jpeg_destroy_decompress (&decomp_info);
 
   fclose (image_file);
+}
+
+void rei_load_font (const char* const relative_path, rei_font_t* out) {
+  rei_file_t xml_file;
+  REI_CHECK (rei_map_file (relative_path, &xml_file));
+
+  const char* xml_data = (const char*) xml_file.data;
+
+  #define _XML_BUFFER_SIZE 4096u
+
+  yxml_t* xml_state = malloc (sizeof *xml_state + _XML_BUFFER_SIZE);
+  yxml_init (xml_state, xml_state + 1, _XML_BUFFER_SIZE);
+
+  #undef _XML_BUFFER_SIZE
+
+  out->symbol_count = 0;
+
+  u32 symb_offset = 0;
+  rei_font_symbol_t* current_symb;
+
+  u8 attr_value_offset = 0;
+  char attr_value[32] = {0};
+
+  for (; *xml_data; ++xml_data) {
+    yxml_ret_t result = yxml_parse (xml_state, *xml_data);
+
+    if (result < 0) {
+      REI_LOG_STR_ERROR ("Zalupa kita");
+      exit (EXIT_FAILURE);
+    }
+
+    if (!strcmp (xml_state->elem, "chars")) {
+      switch (result) {
+        case YXML_ATTRSTART:
+          break;
+
+        case YXML_ATTRVAL:
+          attr_value[attr_value_offset++] = *xml_state->data;
+          break;
+
+        case YXML_ATTREND:
+	  if (!strcmp (xml_state->attr, "count")) {
+	    rei_parse_u32 (attr_value, &out->symbol_count);
+	    out->symbols = malloc (sizeof *out->symbols * out->symbol_count);
+	  }
+
+	  attr_value_offset = 0;
+	  memset (attr_value, 0, 32);
+          break;
+
+        default: break;
+      }
+    } else if (!strcmp (xml_state->elem, "char")) {
+      switch (result) {
+        case YXML_ELEMSTART:
+          current_symb = &out->symbols[symb_offset++];
+          break;
+
+	case YXML_ATTRSTART:
+	  break;
+
+        case YXML_ATTRVAL:
+          attr_value[attr_value_offset++] = *xml_state->data;
+          break;
+
+        case YXML_ATTREND:
+	  if (!strcmp (xml_state->attr, "id")) {
+            rei_parse_u8 (attr_value, &current_symb->id);
+	  } else if (!strcmp (xml_state->attr, "x")) {
+            rei_parse_u8 (attr_value, &current_symb->x);
+	  } else if (!strcmp (xml_state->attr, "y")) {
+            rei_parse_u8 (attr_value, &current_symb->y);
+	  } else if (!strcmp (xml_state->attr, "width")) {
+            rei_parse_u8 (attr_value, &current_symb->width);
+	  } else if (!strcmp (xml_state->attr, "height")) {
+            rei_parse_u8 (attr_value, &current_symb->height);
+	  } else if (!strcmp (xml_state->attr, "xoffset")) {
+	    current_symb->xoffset = atoi (attr_value);
+	  } else if (!strcmp (xml_state->attr, "yoffset")) {
+	    current_symb->yoffset = atoi (attr_value);
+	  } else if (!strcmp (xml_state->attr, "xadvance")) {
+            rei_parse_u8 (attr_value, &current_symb->xadvance);
+	  }
+
+	  attr_value_offset = 0;
+	  memset (attr_value, 0, 32);
+
+	  break;
+
+        case YXML_ELEMEND: break;
+        default: break;
+      }
+    }
+  }
+
+  free (xml_state);
+
+  rei_unmap_file (&xml_file);
 }
 
 static void _s_gltf_parse_nodes (rei_json_state_t* state, rei_gltf_t* out) {

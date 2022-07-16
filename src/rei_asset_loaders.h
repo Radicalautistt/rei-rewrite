@@ -58,6 +58,22 @@ typedef struct rei_wav_t {
   u8* data;
 } rei_wav_t;
 
+typedef struct rei_font_symbol_t {
+  u8 id;
+  u8 x;
+  u8 y;
+  u8 width;
+  u8 height;
+  s8 xoffset;
+  s8 yoffset;
+  u8 xadvance;
+} rei_font_symbol_t;
+
+typedef struct rei_font_t {
+  u32 symbol_count;
+  rei_font_symbol_t* symbols;
+} rei_font_t;
+
 typedef struct rei_gltf_node_t {
   u32 mesh_index;
   f32 scale_vector[3];
@@ -161,6 +177,8 @@ typedef struct rei_gltf_t {
 void rei_load_wav (const char* relative_path, rei_wav_t* out);
 void rei_load_png (const char* relative_path, rei_image_t* out);
 void rei_load_jpeg (const char* relative_path, rei_image_t* out);
+
+void rei_load_font (const char* const relative_path, rei_font_t* out);
 
 rei_result_e rei_gltf_load (const char* relative_path, rei_gltf_t* out);
 void rei_gltf_destroy (rei_gltf_t* gltf);
