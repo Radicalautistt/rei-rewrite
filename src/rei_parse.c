@@ -1,6 +1,6 @@
 #include <string.h>
 
-#include "rei_json.h"
+#include "rei_parse.h"
 #include "rei_debug.h"
 #include "rei_defines.h"
 
@@ -8,26 +8,18 @@ static REI_FORCE_INLINE b8 _s_is_digit (char symbol) {
   return symbol >= '0' && symbol <= '9';
 }
 
-static u32 _s_parse_u32 (const char* src) {
-  s32 result = 0;
+void rei_parse_u32 (const char* src, u32* out) {
+  *out = 0;
 
-  while (*src && _s_is_digit (*src)) {
-    result = result * 10 + (*src - '0');
-    ++src;
-  }
-
-  return (u32) result;
+  for (; *src && _s_is_digit (*src); ++src)
+    *out = *out * 10 + (u32) (*src - '0');
 }
 
-static u64 _s_parse_u64 (const char* src) {
-  s64 result = 0;
+void rei_parse_u64 (const char* src, u64* out) {
+  *out = 0;
 
-  while (*src && _s_is_digit (*src)) {
-    result = result * 10 + (*src - '0');
-    ++src;
-  }
-
-  return (u64) result;
+  for (; *src && _s_is_digit (*src); ++src)
+    *out = *out * 10 + (u64) (*src - '0');
 }
 
 rei_result_e rei_json_tokenize (const char* json, u64 json_size, rei_json_state_t* out) {
@@ -66,7 +58,8 @@ void rei_json_parse_u32 (rei_json_state_t* state, u32* out) {
   ++state->current_token;
   REI_ASSERT (state->current_token->type == JSMN_PRIMITIVE);
 
-  *out = _s_parse_u32 (state->json + state->current_token->start);
+  rei_parse_u32 (state->json + state->current_token->start, out);
+
   ++state->current_token;
 }
 
@@ -74,7 +67,8 @@ void rei_json_parse_u64 (rei_json_state_t* state, u64* out) {
   ++state->current_token;
   REI_ASSERT (state->current_token->type == JSMN_PRIMITIVE);
 
-  *out = _s_parse_u64 (state->json + state->current_token->start);
+  rei_parse_u64 (state->json + state->current_token->start, out);
+
   ++state->current_token;
 }
 

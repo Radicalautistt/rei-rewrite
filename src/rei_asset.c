@@ -10,7 +10,7 @@
 
 #include "rei_asset.h"
 #include "rei_debug.h"
-#include "rei_json.h"
+#include "rei_parse.h"
 #include "rei_asset_loaders.h"
 
 #include <lz4/lib/lz4.h>
