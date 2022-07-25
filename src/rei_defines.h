@@ -3,6 +3,9 @@
 
 #include "rei_types.h"
 
+// Count of render frames in flight.
+#define REI_VK_FRAME_COUNT 2u
+
 #define REI_MIN(a, b) (((a) > (b)) ? (b) : (a))
 #define REI_MAX(a, b) (((a) > (b)) ? (a) : (b))
 #define REI_ARRAY_SIZE(array) (sizeof array / sizeof *array)

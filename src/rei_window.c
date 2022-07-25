@@ -7,6 +7,18 @@
 
 #include <xcb/xcb.h>
 
+#define __REI_XCB_EVENT_MASK (    \
+  XCB_EVENT_MASK_KEY_PRESS        \
+  | XCB_EVENT_MASK_EXPOSURE       \
+  | XCB_EVENT_MASK_KEY_RELEASE    \
+  | XCB_EVENT_MASK_ENTER_WINDOW   \
+  | XCB_EVENT_MASK_LEAVE_WINDOW   \
+  | XCB_EVENT_MASK_BUTTON_PRESS   \
+  | XCB_EVENT_MASK_BUTTON_MOTION  \
+  | XCB_EVENT_MASK_BUTTON_RELEASE \
+  | XCB_EVENT_MASK_POINTER_MOTION \
+  )
+
 // TODO Create floating window if !is_fullscreen.
 void rei_create_xcb_window (u16 width, u16 height, b8 is_fullscreen, rei_xcb_window_t* out) {
   (void) is_fullscreen;
@@ -28,7 +40,7 @@ void rei_create_xcb_window (u16 width, u16 height, b8 is_fullscreen, rei_xcb_win
     XCB_WINDOW_CLASS_INPUT_OUTPUT,
     root_screen->root_visual,
     XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK,
-    (u32[]) {root_screen->white_pixel, XCB_EVENT_MASK_KEY_PRESS | XCB_EVENT_MASK_KEY_RELEASE}
+    (u32[]) {root_screen->white_pixel, __REI_XCB_EVENT_MASK}
   );
 
   xcb_change_property (

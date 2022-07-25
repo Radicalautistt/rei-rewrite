@@ -1,35 +1,31 @@
 #include <memory.h>
 
-#include "rei_window.h"
-#include "rei_types.h"
 #include "rei_imgui.h"
-#include "rei_defines.h"
+#include "rei_window.h"
 
-//#include <xcb/xcb.h>
-#define CIMGUI_DEFINE_ENUMS_AND_STRUCTS
-#include <cimgui/cimgui.h>
 #include <VulkanMemoryAllocator/include/vk_mem_alloc.h>
 
 void rei_create_imgui_ctxt (
-  rei_vk_device_t* device,
-  VmaAllocator allocator,
-  const rei_vk_imm_ctxt_t* imm_ctxt,
+  const rei_vk_device_t* vk_device,
+  VmaAllocator vk_vk_allocator,
+  const rei_vk_imm_ctxt_t* vk_imm_ctxt,
   rei_imgui_ctxt_t* out) {
 
   out->handle = igCreateContext (NULL);
 
   { // Create font texture.
-    rei_image_t font_image;
+    u8* pixels;
+    s32 width, height;
 
     const ImGuiIO* io = igGetIO ();
-    ImFontAtlas_GetTexDataAsRGBA32 (io->Fonts, &font_image.pixels, (s32*) &font_image.width, (s32*) &font_image.height, NULL);
+    ImFontAtlas_GetTexDataAsRGBA32 (io->Fonts, &pixels, &width, &height, NULL);
 
-    rei_vk_create_texture (device, allocator, imm_ctxt, &font_image, &out->font_texture);
+    rei_vk_create_texture_raw (vk_device, vk_vk_allocator, vk_imm_ctxt, (u32) width, (u32) height, pixels, &out->font_texture);
     ImFontAtlas_ClearTexData (io->Fonts);
     ImFontAtlas_SetTexID (io->Fonts, (void*) ((u64) out->font_texture.handle));
   }
 
-  rei_vk_create_sampler (device, 0.f, 1.f, VK_FILTER_LINEAR, &out->font_sampler);
+  rei_vk_create_sampler (vk_device, 0.f, 1.f, VK_FILTER_LINEAR, &out->font_sampler);
 
   // Set IMGUI theme.
   ImGuiStyle* style = igGetStyle ();
@@ -39,106 +35,59 @@ void rei_create_imgui_ctxt (
   style->ScrollbarRounding = 0.f;
   style->Colors[ImGuiCol_WindowBg].w = 1.f;
 
-  style->Colors[ImGuiCol_TitleBg].x = 0.f;
-  style->Colors[ImGuiCol_TitleBg].y = 0.f;
-  style->Colors[ImGuiCol_TitleBg].z = 0.f;
-  style->Colors[ImGuiCol_TitleBg].w = 1.f;
+  #define __SET_BLACK_COLOR(__color) \
+    style->Colors[__color].x = 0.f;  \
+    style->Colors[__color].y = 0.f;  \
+    style->Colors[__color].z = 0.f;  \
+    style->Colors[__color].w = 1.f
 
-  style->Colors[ImGuiCol_ScrollbarBg].x = 0.f;
-  style->Colors[ImGuiCol_ScrollbarBg].y = 0.f;
-  style->Colors[ImGuiCol_ScrollbarBg].z = 0.f;
-  style->Colors[ImGuiCol_ScrollbarBg].w = 1.f;
+  __SET_BLACK_COLOR (ImGuiCol_TitleBg);
+  __SET_BLACK_COLOR (ImGuiCol_ScrollbarBg);
+  __SET_BLACK_COLOR (ImGuiCol_TitleBgActive);
 
-  style->Colors[ImGuiCol_TitleBgActive].x = 0.f;
-  style->Colors[ImGuiCol_TitleBgActive].y = 0.f;
-  style->Colors[ImGuiCol_TitleBgActive].z = 0.f;
-  style->Colors[ImGuiCol_TitleBgActive].w = 1.f;
+  #undef __SET_BLACK_COLOR
 }
 
-void rei_destroy_imgui_ctxt (rei_vk_device_t* device, VmaAllocator allocator, rei_imgui_ctxt_t* ctxt) {
-  vkDestroySampler (device->handle, ctxt->font_sampler, NULL);
-  rei_vk_destroy_image (device, allocator, &ctxt->font_texture);
+void rei_destroy_imgui_ctxt (const rei_vk_device_t* vk_device, VmaAllocator vk_allocator, rei_imgui_ctxt_t* ctxt) {
+  vkDestroySampler (vk_device->handle, ctxt->font_sampler, NULL);
+  rei_vk_destroy_image (vk_device, vk_allocator, &ctxt->font_texture);
 
   igDestroyContext (ctxt->handle);
 }
 
-void rei_create_imgui_frame_data (rei_vk_device_t* device, VmaAllocator allocator, const rei_imgui_frame_data_ci_t* create_info, rei_imgui_frame_t* out) {
-  { // Create dummy buffers for the first frame so that we can elude
-    // assertion of buffer being a valid handle every time we want to delete it.
-    for (u32 i = 0; i < 2; ++i) {
-      rei_vk_create_buffer (
-	allocator,
-	1,
-	VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-	VMA_MEMORY_USAGE_CPU_TO_GPU,
-	VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-	&out->vertex_buffers[i]
-      );
+void rei_imgui_create_frame_data (
+  const rei_vk_device_t* vk_device,
+  VmaAllocator vk_allocator,
+  const rei_vk_render_pass_t* vk_render_pass,
+  VkDescriptorPool vk_desc_pool,
+  VkDescriptorSetLayout vk_desc_layout,
+  const rei_imgui_ctxt_t* imgui_ctxt,
+  rei_imgui_frame_data_t* out) {
 
-      rei_vk_create_buffer (
-	allocator,
-	1,
-	VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-	VMA_MEMORY_USAGE_CPU_TO_GPU,
-	VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-	&out->index_buffers[i]
-      );
+  // Create dummy buffers (destroyed on the first frame) to elude (buffer->handle != VK_NULL_HANDLE) check,
+  // which would otherwise be mandatory to do before buffer deletion.
+  for (u32 i = 0; i < REI_VK_FRAME_COUNT; ++i) {
+    out->buffers[i] = malloc (sizeof **out->buffers);
+    REI_VK_CREATE_DYN_BUFFER (vk_allocator, 1, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, &out->buffers[i]->vtx_buffer);
+    REI_VK_CREATE_DYN_BUFFER (vk_allocator, 1, VK_BUFFER_USAGE_INDEX_BUFFER_BIT, &out->buffers[i]->idx_buffer);
 
-      // Persistently map buffers to update them every time new data arrives from IMGUI.
-      REI_VK_CHECK (vmaMapMemory (allocator, out->vertex_buffers[i].memory, &out->vertex_buffers[i].mapped));
-      REI_VK_CHECK (vmaMapMemory (allocator, out->index_buffers[i].memory, &out->index_buffers[i].mapped));
-    }
+    rei_vk_map_buffer (vk_allocator, &out->buffers[i]->vtx_buffer);
+    rei_vk_map_buffer (vk_allocator, &out->buffers[i]->idx_buffer);
   }
 
-  {
-    VkDescriptorSetAllocateInfo alloc_info = {
-      .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-      .pNext = NULL,
-      .descriptorPool = create_info->descriptor_pool,
-      .descriptorSetCount = 1,
-      .pSetLayouts = &create_info->descriptor_layout
-    };
+  // Allocate descriptors.
+  rei_vk_allocate_descriptors (vk_device, vk_desc_pool, vk_desc_layout, 1, &out->font_descriptor);
+  rei_vk_write_image_descriptors (vk_device, imgui_ctxt->font_sampler, &imgui_ctxt->font_texture.view, 1, &out->font_descriptor);
 
-    REI_VK_CHECK (vkAllocateDescriptorSets (device->handle, &alloc_info, &out->font_descriptor));
-  }
-
-  {
-    VkDescriptorImageInfo image_info = {
-      .sampler = create_info->sampler,
-      .imageView = create_info->texture->view,
-      .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
-    };
-
-    VkWriteDescriptorSet write = {
-      .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-      .pNext = NULL,
-      .dstSet = out->font_descriptor,
-      .dstBinding = 0,
-      .dstArrayElement = 0,
-      .descriptorCount = 1,
-      .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-      .pImageInfo = &image_info,
-      .pBufferInfo = NULL,
-      .pTexelBufferView = NULL
-    };
-
-    vkUpdateDescriptorSets (device->handle, 1, &write, 0, NULL);
-  }
-
-  {
-    VkPushConstantRange push_constant = {.stageFlags = VK_SHADER_STAGE_VERTEX_BIT, .offset = 0, .size = sizeof (rei_vec2_t)};
-    VkPipelineLayoutCreateInfo info = {
-      .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-      .pNext = NULL,
-      .flags = 0,
-      .setLayoutCount = 1,
-      .pSetLayouts = &create_info->descriptor_layout,
-      .pushConstantRangeCount = 1,
-      .pPushConstantRanges = &push_constant
-    };
-
-    REI_VK_CHECK (vkCreatePipelineLayout (device->handle, &info, NULL, &out->pipeline_layout));
-  }
+  // Create graphics pipeline.
+  rei_vk_create_pipeline_layout (
+    vk_device,
+    1,
+    &vk_desc_layout,
+    1,
+    &(const VkPushConstantRange) {.stageFlags = VK_SHADER_STAGE_VERTEX_BIT, .offset = 0, .size = sizeof (rei_vec2_t)},
+    &out->pipeline_layout
+  );
 
   VkVertexInputBindingDescription binding = {
     .binding = 0,
@@ -234,8 +183,8 @@ void rei_create_imgui_frame_data (rei_vk_device_t* device, VmaAllocator allocato
   rei_vk_gfx_pipeline_ci_t info = {
     .color_blend_attachment_count = 1,
     .layout = out->pipeline_layout,
-    .cache = create_info->pipeline_cache,
-    .render_pass = create_info->render_pass,
+    .cache = VK_NULL_HANDLE,
+    .render_pass = vk_render_pass->handle,
     .pixel_shader_path = "shaders/imgui.frag.spv",
     .vertex_shader_path = "shaders/imgui.vert.spv",
 
@@ -247,22 +196,28 @@ void rei_create_imgui_frame_data (rei_vk_device_t* device, VmaAllocator allocato
     .color_blend_attachments = &color_blend_attachment
   };
 
-  rei_vk_create_gfx_pipeline (device, &info, &out->pipeline);
+  rei_vk_create_gfx_pipeline (vk_device, &info, &out->pipeline);
 }
 
-void rei_destroy_imgui_frame_data (rei_vk_device_t* device, VmaAllocator allocator, rei_imgui_frame_t* frame_data) {
-  vkDestroyPipeline (device->handle, frame_data->pipeline, NULL);
-  vkDestroyPipelineLayout (device->handle, frame_data->pipeline_layout, NULL);
+void rei_imgui_destroy_frame_data (const rei_vk_device_t* vk_device, VmaAllocator vk_allocator, rei_imgui_frame_data_t* frame_data) {
+  vkDestroyPipeline (vk_device->handle, frame_data->pipeline, NULL);
+  vkDestroyPipelineLayout (vk_device->handle, frame_data->pipeline_layout, NULL);
 
-  for (u32 i = 0; i < 2; ++i) {
-    vmaUnmapMemory (allocator, frame_data->index_buffers[i].memory);
-    vmaUnmapMemory (allocator, frame_data->vertex_buffers[i].memory);
-    rei_vk_destroy_buffer (allocator, &frame_data->index_buffers[i]);
-    rei_vk_destroy_buffer (allocator, &frame_data->vertex_buffers[i]);
+  for (u32 i = 0; i < REI_VK_FRAME_COUNT; ++i) {
+    rei_vk_buffer_t* idx_buffer = &frame_data->buffers[i]->idx_buffer;
+    rei_vk_buffer_t* vtx_buffer = &frame_data->buffers[i]->vtx_buffer;
+
+    rei_vk_unmap_buffer (vk_allocator, idx_buffer);
+    rei_vk_unmap_buffer (vk_allocator, vtx_buffer);
+
+    rei_vk_destroy_buffer (vk_allocator, idx_buffer);
+    rei_vk_destroy_buffer (vk_allocator, vtx_buffer);
+
+    free (frame_data->buffers[i]);
   }
 }
 
-void rei_new_imgui_frame (ImGuiIO* io) {
+void rei_imgui_new_frame (ImGuiIO* io) {
   // FIXME hardcoded values
   io->DisplaySize.x = 1366.f;
   io->DisplaySize.y = 768.f;
@@ -270,8 +225,7 @@ void rei_new_imgui_frame (ImGuiIO* io) {
   igNewFrame ();
 }
 
-#if 0
-void rei_handle_imgui_events (ImGuiIO* io, const rei_xcb_window_t* window, const xcb_generic_event_t* event) {
+void rei_imgui_handle_events (ImGuiIO* io, const rei_xcb_window_t* window, const xcb_generic_event_t* event) {
   switch (event->response_type) {
     case XCB_MOTION_NOTIFY: rei_xcb_get_mouse_pos (window, &io->MousePos.x); return;
 
@@ -294,108 +248,91 @@ void rei_handle_imgui_events (ImGuiIO* io, const rei_xcb_window_t* window, const
     } break;
   }
 }
-#endif
 
-void rei_update_imgui (VmaAllocator allocator, rei_imgui_frame_t* frame_data, const ImDrawData* draw_data, u32 frame_index) {
-  const u64 new_index_buffer_size = sizeof (ImDrawIdx) * (u64) draw_data->TotalIdxCount;
-  const u64 new_vertex_buffer_size = sizeof (ImDrawVert) * (u64) draw_data->TotalVtxCount;
+void rei_imgui_update_buffers (VmaAllocator vk_allocator, rei_imgui_frame_data_t* frame_data, const ImDrawData* draw_data, u32 frame_index) {
+  const u64 new_idx_buffer_size = sizeof (ImDrawIdx) * (u64) draw_data->TotalIdxCount;
+  const u64 new_vtx_buffer_size = sizeof (ImDrawVert) * (u64) draw_data->TotalVtxCount;
 
-  rei_vk_buffer_t* index_buffer = &frame_data->index_buffers[frame_index];
-  rei_vk_buffer_t* vertex_buffer = &frame_data->vertex_buffers[frame_index];
+  rei_vk_buffer_t* idx_buffer = &frame_data->buffers[frame_index]->idx_buffer;
+  rei_vk_buffer_t* vtx_buffer = &frame_data->buffers[frame_index]->vtx_buffer;
 
   // Recreate buffers if their sizes are insufficient to hold IMGUI geometry.
-  if (new_vertex_buffer_size > vertex_buffer->size) {
-    vmaUnmapMemory (allocator, vertex_buffer->memory);
-    rei_vk_destroy_buffer (allocator, vertex_buffer);
+  if (new_vtx_buffer_size > vtx_buffer->size) {
+    rei_vk_unmap_buffer (vk_allocator, vtx_buffer);
+    rei_vk_destroy_buffer (vk_allocator, vtx_buffer);
 
-    rei_vk_create_buffer (
-      allocator,
-      new_vertex_buffer_size,
-      VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-      VMA_MEMORY_USAGE_CPU_TO_GPU,
-      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-      vertex_buffer
-    );
-
-    REI_VK_CHECK (vmaMapMemory (allocator, vertex_buffer->memory, &vertex_buffer->mapped));
+    REI_VK_CREATE_DYN_BUFFER (vk_allocator, new_vtx_buffer_size, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, vtx_buffer);
+    rei_vk_map_buffer (vk_allocator, vtx_buffer);
   }
 
-  if (new_index_buffer_size > index_buffer->size) {
-    vmaUnmapMemory (allocator, index_buffer->memory);
-    rei_vk_destroy_buffer (allocator, index_buffer);
+  if (new_idx_buffer_size > idx_buffer->size) {
+    rei_vk_unmap_buffer (vk_allocator, idx_buffer);
+    rei_vk_destroy_buffer (vk_allocator, idx_buffer);
 
-    rei_vk_create_buffer (
-      allocator,
-      new_index_buffer_size,
-      VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-      VMA_MEMORY_USAGE_CPU_TO_GPU,
-      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-      index_buffer
-    );
-
-    REI_VK_CHECK (vmaMapMemory (allocator, index_buffer->memory, &index_buffer->mapped));
+    REI_VK_CREATE_DYN_BUFFER (vk_allocator, new_vtx_buffer_size, VK_BUFFER_USAGE_INDEX_BUFFER_BIT, idx_buffer);
+    rei_vk_map_buffer (vk_allocator, idx_buffer);
   }
 
   // Write IMGUI data to buffers.
-  ImDrawVert* vertices = (ImDrawVert*) vertex_buffer->mapped;
-  ImDrawIdx* indices = (ImDrawIdx*) index_buffer->mapped;
+  ImDrawVert* vertices = (ImDrawVert*) vtx_buffer->mapped;
+  ImDrawIdx* indices = (ImDrawIdx*) idx_buffer->mapped;
 
   for (s32 i = 0; i < draw_data->CmdListsCount; ++i) {
     const ImDrawList* current = draw_data->CmdLists[i];
-    const u64 index_buffer_size = (u64) current->IdxBuffer.Size;
-    const u64 vertex_buffer_size = (u64) current->VtxBuffer.Size;
+    const u64 idx_buffer_size = (u64) current->IdxBuffer.Size;
+    const u64 vtx_buffer_size = (u64) current->VtxBuffer.Size;
 
-    memcpy (vertices, current->VtxBuffer.Data, sizeof (ImDrawVert) * vertex_buffer_size);
-    memcpy (indices, current->IdxBuffer.Data, sizeof (ImDrawIdx) * index_buffer_size);
+    memcpy (vertices, current->VtxBuffer.Data, sizeof (ImDrawVert) * vtx_buffer_size);
+    memcpy (indices, current->IdxBuffer.Data, sizeof (ImDrawIdx) * idx_buffer_size);
 
-    vertices += vertex_buffer_size;
-    indices += index_buffer_size;
+    vertices += vtx_buffer_size;
+    indices += idx_buffer_size;
   }
 
   REI_VK_CHECK (vmaFlushAllocations (
-    allocator,
+    vk_allocator,
     2,
-    (VmaAllocation[]) {vertex_buffer->memory, index_buffer->memory},
+    (VmaAllocation[]) {vtx_buffer->memory, idx_buffer->memory},
     (VkDeviceSize[]) {0, 0},
-    (VkDeviceSize[]) {vertex_buffer->size, index_buffer->size}
+    (VkDeviceSize[]) {vtx_buffer->size, idx_buffer->size}
   ));
 }
 
-void rei_render_imgui_cmd (VkCommandBuffer cmd_buffer, rei_imgui_frame_t* frame_data, const ImDrawData* draw_data, u32 frame_index) {
-  vkCmdBindPipeline (cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, frame_data->pipeline);
-  vkCmdBindDescriptorSets (cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, frame_data->pipeline_layout, 0, 1, &frame_data->font_descriptor, 0, NULL);
+void rei_imgui_draw_cmd (VkCommandBuffer vk_cmd_buffer, const rei_imgui_frame_data_t* frame_data, const ImDrawData* draw_data, u32 frame_index) {
+  vkCmdBindPipeline (vk_cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, frame_data->pipeline);
+  REI_VK_BIND_DESCRIPTORS (vk_cmd_buffer, frame_data->pipeline_layout, 1, &frame_data->font_descriptor);
 
   const rei_vec2_t scale = {.x = 2.f / 1680.f, .y = 2.f / 1050.f};
-  vkCmdPushConstants (cmd_buffer, frame_data->pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof (rei_vec2_t), &scale);
+  vkCmdPushConstants (vk_cmd_buffer, frame_data->pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof (rei_vec2_t), &scale);
 
-  vkCmdBindVertexBuffers (cmd_buffer, 0, 1, &frame_data->vertex_buffers[frame_index].handle, (const u64[]) {0});
-  vkCmdBindIndexBuffer (cmd_buffer, frame_data->index_buffers[frame_index].handle, 0, VK_INDEX_TYPE_UINT16);
+  vkCmdBindVertexBuffers (vk_cmd_buffer, 0, 1, &frame_data->buffers[frame_index]->vtx_buffer.handle, (const u64[]) {0});
+  vkCmdBindIndexBuffer (vk_cmd_buffer, frame_data->buffers[frame_index]->idx_buffer.handle, 0, VK_INDEX_TYPE_UINT16);
 
   s32 vtx_offset = 0;
   u32 idx_offset = 0;
 
   for (s32 i = 0; i < draw_data->CmdListsCount; ++i) {
-    const ImDrawList* cmdList = draw_data->CmdLists[i];
+    const ImDrawList* cmd_list = draw_data->CmdLists[i];
 
-    for (s32 j = 0; j < cmdList->CmdBuffer.Size; ++j) {
-      const ImDrawCmd* cmd = &cmdList->CmdBuffer.Data[j];
+    for (s32 j = 0; j < cmd_list->CmdBuffer.Size; ++j) {
+      const ImDrawCmd* draw_cmd = &cmd_list->CmdBuffer.Data[j];
       const VkRect2D scissor = {
-	.offset.x = REI_MAX ((s32) cmd->ClipRect.x, 0),
-	.offset.y = REI_MAX ((s32) cmd->ClipRect.y, 0),
-	.extent.width = (u32) (cmd->ClipRect.z - cmd->ClipRect.x),
-	.extent.height = (u32) (cmd->ClipRect.w - cmd->ClipRect.y)
+	.offset.x = REI_MAX ((s32) draw_cmd->ClipRect.x, 0),
+	.offset.y = REI_MAX ((s32) draw_cmd->ClipRect.y, 0),
+	.extent.width = (u32) (draw_cmd->ClipRect.z - draw_cmd->ClipRect.x),
+	.extent.height = (u32) (draw_cmd->ClipRect.w - draw_cmd->ClipRect.y)
       };
 
-      vkCmdSetScissor (cmd_buffer, 0, 1, &scissor);
-      vkCmdDrawIndexed (cmd_buffer, cmd->ElemCount, 1, cmd->IdxOffset + idx_offset, (s32) cmd->VtxOffset + vtx_offset, 0);
+      vkCmdSetScissor (vk_cmd_buffer, 0, 1, &scissor);
+      vkCmdDrawIndexed (vk_cmd_buffer, draw_cmd->ElemCount, 1, draw_cmd->IdxOffset + idx_offset, (s32) draw_cmd->VtxOffset + vtx_offset, 0);
     }
 
-    idx_offset += (u32) cmdList->IdxBuffer.Size;
-    vtx_offset += cmdList->VtxBuffer.Size;
+    idx_offset += (u32) cmd_list->IdxBuffer.Size;
+    vtx_offset += cmd_list->VtxBuffer.Size;
   }
 }
 
-void rei_imgui_debug_window (ImGuiIO* io) {
+void rei_imgui_debug_window_wid (ImGuiIO* io) {
   igBegin ("Debug menu:", NULL, 0);
 
   igSeparator ();

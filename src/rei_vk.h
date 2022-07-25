@@ -19,28 +19,28 @@
 #define REI_VK_TEXTURE_FORMAT VK_FORMAT_R8G8B8A8_SRGB
 #define REI_VK_DEPTH_FORMAT VK_FORMAT_X8_D24_UNORM_PACK32
 
-#define REI_VK_DEBUG_MESSENGER_CI(name)                                                                                   \
-    VkDebugUtilsMessengerCreateInfoEXT name = {                                                                           \
-      .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,                                                   \
-      .pNext = NULL,                                                                                                      \
-      .pUserData = NULL,                                                                                                  \
-      .flags = 0,                                                                                                         \
-      .pfnUserCallback = rei_vk_debug_callback,                                                                           \
-      .messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT,    \
-      .messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT, \
-    }
+#define REI_VK_DEBUG_MESSENGER_CI(__name)                                                                               \
+  VkDebugUtilsMessengerCreateInfoEXT __name = {                                                                         \
+    .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,                                                   \
+    .pNext = NULL,                                                                                                      \
+    .pUserData = NULL,                                                                                                  \
+    .flags = 0,                                                                                                         \
+    .pfnUserCallback = rei_vk_debug_callback,                                                                           \
+    .messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT,    \
+    .messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT, \
+  }
 
 #ifdef NDEBUG
-#  define REI_VK_CHECK(call) call
+#  define REI_VK_CHECK(__call) __call
 #else
-#  define REI_VK_CHECK(call) do {                                                                         \
-     VkResult error = call;                                                                               \
-     if (error) {                                                                                         \
+#  define REI_VK_CHECK(__call) do {                                                                       \
+     VkResult vk_error = __call;                                                                          \
+     if (vk_error) {                                                                                      \
        REI_LOG_ERROR (                                                                                    \
          "%s:%d REI Vulkan error " REI_ANSI_YELLOW "%s" REI_ANSI_RED " occured in " REI_ANSI_YELLOW "%s", \
          __FILE__,                                                                                        \
          __LINE__,                                                                                        \
-         rei_vk_show_error (error),                                                                       \
+         rei_vk_show_error (vk_error),                                                                    \
          __FUNCTION__                                                                                     \
        );                                                                                                 \
                                                                                                           \
@@ -52,7 +52,29 @@
 #define REI_VK_BIND_DESCRIPTORS(__cmd_buffer, __pipeline_layout, __count, __descriptors) \
   vkCmdBindDescriptorSets (__cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, __pipeline_layout, 0, __count, __descriptors, 0, NULL);
 
-#define REI_FD_VULKAN_TYPE(name) typedef struct name##_T* name
+#define REI_VK_CREATE_STAGING_BUFFER(__allocator, __size, __out) do {           \
+  rei_vk_create_buffer (                                                        \
+    __allocator,                                                                \
+    __size,                                                                     \
+    VK_BUFFER_USAGE_TRANSFER_SRC_BIT,                                           \
+    VMA_MEMORY_USAGE_CPU_ONLY,                                                  \
+    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, \
+    &__out                                                                      \
+  );                                                                            \
+} while (0)
+
+#define REI_VK_CREATE_DYN_BUFFER(__allocator, __size, __usage, __out) do {      \
+  rei_vk_create_buffer (                                                        \
+    __allocator,                                                                \
+    __size,                                                                     \
+    __usage | VK_BUFFER_USAGE_TRANSFER_DST_BIT,                                 \
+    VMA_MEMORY_USAGE_CPU_TO_GPU,                                                \
+    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, \
+    __out                                                                       \
+  );                                                                            \
+} while (0)
+
+#define REI_FD_VULKAN_TYPE(__name) typedef struct __name##_T* __name
 
 // Forward declare Vulkan types.
 REI_FD_VULKAN_TYPE (VmaAllocator);
@@ -262,6 +284,16 @@ void rei_vk_end_frame (
 void rei_vk_destroy_frame_data (const rei_vk_device_t* device, rei_vk_frame_data_t* frame_data);
 
 void rei_vk_create_shader_module (const rei_vk_device_t* device, const char* relative_path, VkShaderModule* out);
+
+void rei_vk_create_pipeline_layout (
+  const rei_vk_device_t* device,
+  u32 desc_count,
+  const VkDescriptorSetLayout* desc_layouts,
+  u32 push_count,
+  const VkPushConstantRange* push_constants,
+  VkPipelineLayout* out
+);
+
 void rei_vk_create_gfx_pipeline (const rei_vk_device_t* device, const rei_vk_gfx_pipeline_ci_t* create_info, VkPipeline* out);
 
 void rei_vk_create_imm_ctxt (const rei_vk_device_t* device, u32 queue_index, rei_vk_imm_ctxt_t* out);
@@ -278,15 +310,36 @@ void rei_vk_copy_buffer_cmd (
   rei_vk_buffer_t* restrict dst
 );
 
+void rei_vk_copy_buffer_to_image_cmd (
+  VkCommandBuffer cmd_buffer,
+  const rei_vk_buffer_t* src,
+  rei_vk_image_t* dst,
+  u32 mip_level,
+  u32 width,
+  u32 height
+);
+
 void rei_vk_end_imm_cmd (const rei_vk_device_t* device, const rei_vk_imm_ctxt_t* context, VkCommandBuffer cmd_buffer);
 
 void rei_vk_create_sampler (const rei_vk_device_t* device, f32 min_lod, f32 max_lod, VkFilter filter, VkSampler* out);
 
+// Decompress and create a texture loaded from a rtex file.
 void rei_vk_create_texture (
   const rei_vk_device_t* device,
   VmaAllocator allocator,
   const rei_vk_imm_ctxt_t* context,
   const rei_texture_t* src,
+  rei_vk_image_t* out
+);
+
+// Create texture from raw pixels in RGBA format.
+void rei_vk_create_texture_raw (
+  const rei_vk_device_t* device,
+  VmaAllocator allocator,
+  const rei_vk_imm_ctxt_t* context,
+  u32 width,
+  u32 height,
+  const u8* src,
   rei_vk_image_t* out
 );
 

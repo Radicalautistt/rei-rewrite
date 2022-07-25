@@ -3,6 +3,7 @@
 #include "rei_vk.h"
 #include "rei_debug.h"
 #include "rei_model.h"
+#include "rei_imgui.h"
 #include "rei_window.h"
 #include "rei_camera.h"
 #include "rei_defines.h"
@@ -10,8 +11,6 @@
 
 #include <xcb/xcb.h>
 #include <VulkanMemoryAllocator/include/vk_mem_alloc.h>
-
-#define REI_VK_FRAME_COUNT 2u
 
 int main (void) {
   struct timeval timer_start;
@@ -35,16 +34,16 @@ int main (void) {
 
   rei_vk_imm_ctxt_t imm_ctxt;
   VkPipeline default_pipeline;
-  VkDescriptorPool main_descriptor_pool;
+  VkDescriptorPool main_desc_pool;
   VkPipelineLayout default_pipeline_layout;
-  VkDescriptorSetLayout default_descriptor_layout;
+  VkDescriptorSetLayout default_desc_layout;
   VkSampler default_sampler;
 
   rei_model_t test_model;
   rei_camera_t camera;
 
-  //rei_imgui_ctxt_t imgui_ctxt;
-  //rei_imgui_frame_t imgui_frame_data;
+  rei_imgui_ctxt_t imgui_ctxt;
+  rei_imgui_frame_data_t imgui_frame_data;
 
   // Start timer
   gettimeofday (&timer_start, NULL);
@@ -138,7 +137,7 @@ int main (void) {
       .pBindings = &albedo,
     };
 
-    REI_VK_CHECK (vkCreateDescriptorSetLayout (vk_device.handle, &create_info, NULL, &default_descriptor_layout));
+    REI_VK_CHECK (vkCreateDescriptorSetLayout (vk_device.handle, &create_info, NULL, &default_desc_layout));
   }
 
   rei_vk_create_imm_ctxt (&vk_device, vk_device.gfx_index, &imm_ctxt);
@@ -153,28 +152,15 @@ int main (void) {
       .pPoolSizes = (VkDescriptorPoolSize[]) {{.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .descriptorCount = 1}}
     };
 
-    REI_VK_CHECK (vkCreateDescriptorPool (vk_device.handle, &create_info, NULL, &main_descriptor_pool));
+    REI_VK_CHECK (vkCreateDescriptorPool (vk_device.handle, &create_info, NULL, &main_desc_pool));
   }
 
-  {
-    VkPushConstantRange push_constant = {
-      .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
-      .offset = 0,
-      .size = sizeof (rei_mat4_t)
-    };
-
-    VkPipelineLayoutCreateInfo create_info = {
-      .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-      .pNext = NULL,
-      .flags = 0,
-      .setLayoutCount = 1,
-      .pSetLayouts = &default_descriptor_layout,
-      .pushConstantRangeCount = 1,
-      .pPushConstantRanges = &push_constant,
-    };
-
-    REI_VK_CHECK (vkCreatePipelineLayout (vk_device.handle, &create_info, NULL, &default_pipeline_layout));
-  }
+  rei_vk_create_pipeline_layout (
+    &vk_device,
+    1, &default_desc_layout,
+    1, &(const VkPushConstantRange) {.stageFlags = VK_SHADER_STAGE_VERTEX_BIT, .offset = 0, .size = sizeof (rei_mat4_t)},
+    &default_pipeline_layout
+  );
 
   {
     VkVertexInputBindingDescription binding = {
@@ -306,7 +292,7 @@ int main (void) {
     rei_vk_create_gfx_pipeline (&vk_device, &create_info, &default_pipeline);
   }
 
-  rei_create_model ("assets/sponza/Sponza.gltf", &vk_device, vk_allocator, &imm_ctxt, default_sampler, default_descriptor_layout, &test_model);
+  rei_create_model ("assets/sponza/Sponza.gltf", &vk_device, vk_allocator, &imm_ctxt, default_sampler, default_desc_layout, &test_model);
 
   rei_create_camera (
     &(rei_vec3_t) {.x = 0.f, .y = 1.f, .z = 0.f},
@@ -317,34 +303,22 @@ int main (void) {
     &camera
   );
 
-  //rei_create_imgui_ctxt (&vk_device, vk_allocator, &imm_ctxt, &imgui_ctxt);
+  rei_create_imgui_ctxt (&vk_device, vk_allocator, &imm_ctxt, &imgui_ctxt);
+  rei_imgui_create_frame_data (&vk_device, vk_allocator, &vk_render_pass, main_desc_pool, default_desc_layout, &imgui_ctxt, &imgui_frame_data);
 
 #if 0
-  {
-    rei_imgui_frame_data_ci_t create_info = {
-      .render_pass = render_pass,
-      .descriptor_pool = main_descriptor_pool,
-      .descriptor_layout = default_descriptor_layout,
-      .pipeline_cache = VK_NULL_HANDLE,
-      .sampler = imgui_ctxt.font_sampler,
-      .texture = &imgui_ctxt.font_texture
-    };
-
-    rei_create_imgui_frame_data (&vk_device, vk_allocator, &create_info, &imgui_frame_data);
-  }
-
   rei_create_openal_ctxt (&openal_ctxt);
-
 #endif
   const f32 delta_time = 1.f / 60.f;
-  xcb_generic_event_t* event;
 
   for (;;) {
-    //ImGuiIO* imgui_io = igGetIO ();
-    //imgui_io->DeltaTime = delta_time;
+    ImGuiIO* imgui_io = igGetIO ();
+    imgui_io->DeltaTime = delta_time;
 
-    while ((event = xcb_poll_for_event (window.conn))) {
-      //rei_handle_imgui_events (imgui_io, &window, event);
+    xcb_generic_event_t* event = xcb_poll_for_event (window.conn);
+
+    if (event) {
+      rei_imgui_handle_events (imgui_io, &window, event);
 
       if (event->response_type == XCB_KEY_PRESS) {
         const xcb_key_press_event_t* key_press = (const xcb_key_press_event_t*) event;
@@ -371,16 +345,16 @@ int main (void) {
     vkCmdBindPipeline (vk_cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, default_pipeline);
     rei_draw_model_cmd (&test_model, vk_cmd_buffer, default_pipeline_layout, &view_projection);
 
-    rei_vk_end_frame (&vk_device, vk_current_frame, &swapchain, vk_image_index);
-#if 0
-    rei_new_imgui_frame (imgui_io);
-    rei_imgui_debug_window (imgui_io);
+    rei_imgui_new_frame (imgui_io);
+    rei_imgui_debug_window_wid (imgui_io);
     igRender ();
 
     const ImDrawData* imgui_data = igGetDrawData ();
-    rei_update_imgui (vk_allocator, &imgui_frame_data, imgui_data, frame_index);
-    rei_render_imgui_cmd (cmd_buffer, &imgui_frame_data, imgui_data, frame_index);
-#endif
+    rei_imgui_update_buffers (vk_allocator, &imgui_frame_data, imgui_data, frame_index);
+
+    rei_imgui_draw_cmd (vk_cmd_buffer, &imgui_frame_data, imgui_data, frame_index);
+
+    rei_vk_end_frame (&vk_device, vk_current_frame, &swapchain, vk_image_index);
     ++frame_index;
   }
 
@@ -389,17 +363,17 @@ RESOURCE_CLEANUP_L:
 
 #if 0
   rei_destroy_openal_ctxt (&openal_ctxt);
-  rei_destroy_imgui_frame_data (&vk_device, vk_allocator, &imgui_frame_data);
-  rei_destroy_imgui_ctxt (&vk_device, vk_allocator, &imgui_ctxt);
 #endif
+  rei_imgui_destroy_frame_data (&vk_device, vk_allocator, &imgui_frame_data);
+  rei_destroy_imgui_ctxt (&vk_device, vk_allocator, &imgui_ctxt);
 
   rei_destroy_model (&vk_device, vk_allocator, &test_model);
   vkDestroyPipeline (vk_device.handle, default_pipeline, NULL);
   vkDestroyPipelineLayout (vk_device.handle, default_pipeline_layout, NULL);
-  vkDestroyDescriptorPool (vk_device.handle, main_descriptor_pool, NULL);
+  vkDestroyDescriptorPool (vk_device.handle, main_desc_pool, NULL);
 
   rei_vk_destroy_imm_ctxt (&vk_device, &imm_ctxt);
-  vkDestroyDescriptorSetLayout (vk_device.handle, default_descriptor_layout, NULL);
+  vkDestroyDescriptorSetLayout (vk_device.handle, default_desc_layout, NULL);
   vkDestroySampler (vk_device.handle, default_sampler, NULL);
 
   for (u32 i = 0; i < REI_VK_FRAME_COUNT; ++i) rei_vk_destroy_frame_data (&vk_device, &vk_frames[i]);
