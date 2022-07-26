@@ -48,7 +48,7 @@
     VK_BUFFER_USAGE_TRANSFER_SRC_BIT,                                           \
     VMA_MEMORY_USAGE_CPU_ONLY,                                                  \
     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, \
-    &__out                                                                      \
+    __out                                                                       \
   );                                                                            \
 } while (0)
 
@@ -277,6 +277,7 @@ void rei_vk_create_gfx_pipeline (const rei_vk_device_t* device, const rei_vk_gfx
 
 void rei_vk_create_imm_ctxt (const rei_vk_device_t* device, u32 queue_index, rei_vk_imm_ctxt_t* out);
 void rei_vk_destroy_imm_ctxt (const rei_vk_device_t* device, rei_vk_imm_ctxt_t* context);
+
 void rei_vk_start_imm_cmd (const rei_vk_device_t* device, const rei_vk_imm_ctxt_t* context, VkCommandBuffer* out);
 
 void rei_vk_transition_image_cmd (VkCommandBuffer cmd_buffer, const rei_vk_image_trans_info_t* trans_info, VkImage image);
@@ -298,18 +299,19 @@ void rei_vk_copy_buffer_to_image_cmd (
   u32 height
 );
 
-void rei_vk_end_imm_cmd (const rei_vk_device_t* device, const rei_vk_imm_ctxt_t* context, VkCommandBuffer cmd_buffer);
-
-void rei_vk_create_sampler (const rei_vk_device_t* device, f32 min_lod, f32 max_lod, VkFilter filter, VkSampler* out);
-
 // Decompress and create a texture loaded from a rtex file.
-void rei_vk_create_texture (
+void rei_vk_create_texture_cmd (
   const rei_vk_device_t* device,
   VmaAllocator allocator,
-  const rei_vk_imm_ctxt_t* context,
+  VkCommandBuffer cmd_buffer,
+  rei_vk_buffer_t* staging_buffer,
   const rei_texture_t* src,
   rei_vk_image_t* out
 );
+
+void rei_vk_end_imm_cmd (const rei_vk_device_t* device, const rei_vk_imm_ctxt_t* context, VkCommandBuffer cmd_buffer);
+
+void rei_vk_create_sampler (const rei_vk_device_t* device, f32 min_lod, f32 max_lod, VkFilter filter, VkSampler* out);
 
 // Create texture from raw pixels in RGBA format.
 void rei_vk_create_texture_raw (

@@ -1103,23 +1103,22 @@ void rei_vk_copy_buffer_to_image_cmd (
   vkCmdCopyBufferToImage (cmd_buffer, src->handle, dst->handle, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy_info);
 }
 
-void rei_vk_create_texture (
+void rei_vk_create_texture_cmd (
   const rei_vk_device_t* device,
   VmaAllocator allocator,
-  const rei_vk_imm_ctxt_t* context,
+  VkCommandBuffer cmd_buffer,
+  rei_vk_buffer_t* staging_buffer,
   const rei_texture_t* src,
   rei_vk_image_t* out) {
 
   REI_ASSERT (src->component_count == 3 || src->component_count == 4);
 
   const u64 image_size = src->width * src->height * src->component_count;
-
-  rei_vk_buffer_t staging_buffer;
   REI_VK_CREATE_STAGING_BUFFER (allocator, image_size, staging_buffer);
 
-  rei_vk_map_buffer (allocator, &staging_buffer);
-  LZ4_decompress_safe (src->compressed_data, (char*) staging_buffer.mapped, (s32) src->compressed_size, image_size);
-  rei_vk_unmap_buffer (allocator, &staging_buffer);
+  rei_vk_map_buffer (allocator, staging_buffer);
+  LZ4_decompress_safe (src->compressed_data, (char*) staging_buffer->mapped, (s32) src->compressed_size, image_size);
+  rei_vk_unmap_buffer (allocator, staging_buffer);
 
   rei_vk_create_image (
     device,
@@ -1143,9 +1142,6 @@ void rei_vk_create_texture (
     .layerCount = 1
   };
 
-  VkCommandBuffer cmd_buffer;
-  rei_vk_start_imm_cmd (device, context, &cmd_buffer);
-
   rei_vk_transition_image_cmd (
     cmd_buffer,
     &(const rei_vk_image_trans_info_t) {
@@ -1158,7 +1154,7 @@ void rei_vk_create_texture (
     out->handle
   );
 
-  rei_vk_copy_buffer_to_image_cmd (cmd_buffer, &staging_buffer, out, 0, src->width, src->height);
+  rei_vk_copy_buffer_to_image_cmd (cmd_buffer, staging_buffer, out, 0, src->width, src->height);
 
   rei_vk_transition_image_cmd (
     cmd_buffer,
@@ -1171,9 +1167,6 @@ void rei_vk_create_texture (
     },
     out->handle
   );
-
-  rei_vk_end_imm_cmd (device, context, cmd_buffer);
-  rei_vk_destroy_buffer (allocator, &staging_buffer);
 }
 
 void rei_vk_create_texture_raw (
@@ -1188,7 +1181,7 @@ void rei_vk_create_texture_raw (
   const u64 image_size = (u64) (width * height * 4);
 
   rei_vk_buffer_t staging_buffer;
-  REI_VK_CREATE_STAGING_BUFFER (allocator, image_size, staging_buffer);
+  REI_VK_CREATE_STAGING_BUFFER (allocator, image_size, &staging_buffer);
 
   rei_vk_map_buffer (allocator, &staging_buffer);
   memcpy (staging_buffer.mapped, src, image_size);

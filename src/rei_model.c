@@ -46,6 +46,50 @@ static void* _s_get_gltf_accessor_data (const rei_gltf_t* const gltf, u32 index)
   return buffer->data + accessor->byte_offset + buffer_view->offset;
 }
 
+static void _s_load_textures (
+  const char* const model_path,
+  const rei_gltf_t* const gltf,
+  const rei_vk_device_t* vk_device,
+  VmaAllocator vk_allocator,
+  const rei_vk_imm_ctxt_t* vk_imm_ctxt,
+  rei_model_t* out) {
+
+  out->texture_count = gltf->texture_count;
+  out->textures = malloc (sizeof *out->textures * out->texture_count);
+
+  char full_path[128] = {0};
+  strcpy (full_path, model_path);
+  char* filename = strrchr (full_path, '/');
+
+  rei_vk_buffer_t* staging_buffers = malloc (sizeof *staging_buffers * out->texture_count);
+
+  VkCommandBuffer vk_cmd_buffer;
+  rei_vk_start_imm_cmd (vk_device, vk_imm_ctxt, &vk_cmd_buffer);
+
+  for (u32 i = 0; i < gltf->texture_count; ++i) {
+    const rei_gltf_texture_t* current_texture = &gltf->textures[i];
+    const rei_gltf_image_t* current_image = &gltf->images[current_texture->image_index];
+
+    strcpy (filename + 1, current_image->uri);
+
+    rei_texture_t new_texture;
+
+    char* ext = strrchr (full_path, '.');
+    if (ext++) {
+      strcpy (ext, "rtex");
+      rei_texture_load (full_path, &new_texture);
+    }
+
+    rei_vk_create_texture_cmd (vk_device, vk_allocator, vk_cmd_buffer, &staging_buffers[i], &new_texture, &out->textures[i]);
+    free (new_texture.compressed_data);
+  }
+
+  rei_vk_end_imm_cmd (vk_device, vk_imm_ctxt, vk_cmd_buffer);
+
+  for (u32 i = 0; i < gltf->texture_count; ++i) rei_vk_destroy_buffer (vk_allocator, &staging_buffers[i]);
+  free (staging_buffers);
+}
+
 void rei_create_model (
   const char* relative_path,
   const rei_vk_device_t* vk_device,
@@ -198,47 +242,19 @@ void rei_create_model (
     rei_mat4_scale (&out->model_matrix, &scale_vector);
   }
 
-  { // Load textures.
-    out->texture_count = gltf.texture_count;
-    out->textures = malloc (sizeof *out->textures * out->texture_count);
+  _s_load_textures (relative_path, &gltf, vk_device, vk_allocator, vk_imm_ctxt, out);
 
-    char full_path[128] = {0};
-    strcpy (full_path, relative_path);
-    char* filename = strrchr (full_path, '/');
-
-    for (u32 i = 0; i < gltf.texture_count; ++i) {
-      const rei_gltf_texture_t* current_texture = &gltf.textures[i];
-      const rei_gltf_image_t* current_image = &gltf.images[current_texture->image_index];
-
-      strcpy (filename + 1, current_image->uri);
-
-      rei_texture_t new_texture;
-
-      char* ext = strrchr (full_path, '.');
-      if (ext++) {
-	strcpy (ext, "rtex");
-	rei_texture_load (full_path, &new_texture);
-      }
-
-      rei_vk_create_texture (vk_device, vk_allocator, vk_imm_ctxt, &new_texture, &out->textures[i]);
-      free (new_texture.compressed_data);
-    }
-  }
-
-  { // Create descriptor pool big enough to hold all the materials of a model.
-    VkDescriptorPoolCreateInfo create_info = {
-      .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-      .pNext = NULL,
-      .flags = 0,
-      .maxSets = gltf.material_count,
-      .poolSizeCount = 1,
-      .pPoolSizes = (VkDescriptorPoolSize[]) {
-        {.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .descriptorCount = gltf.material_count}
-      }
-    };
-
-    REI_VK_CHECK (vkCreateDescriptorPool (vk_device->handle, &create_info, NULL, &out->descriptor_pool));
-  }
+  // Create descriptor pool big enough to hold all the materials of a model.
+  rei_vk_create_descriptor_pool (
+    vk_device,
+    gltf.material_count,
+    1,
+    &(const VkDescriptorPoolSize) {
+      .descriptorCount = gltf.material_count,
+      .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER
+    },
+    &out->descriptor_pool
+  );
 
   out->descriptors = malloc (sizeof *out->descriptors * gltf.material_count);
   rei_vk_allocate_descriptors (vk_device, out->descriptor_pool, vk_descriptor_layout, gltf.material_count, out->descriptors);
