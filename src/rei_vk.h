@@ -19,17 +19,6 @@
 #define REI_VK_TEXTURE_FORMAT VK_FORMAT_R8G8B8A8_SRGB
 #define REI_VK_DEPTH_FORMAT VK_FORMAT_X8_D24_UNORM_PACK32
 
-#define REI_VK_DEBUG_MESSENGER_CI(__name)                                                                               \
-  VkDebugUtilsMessengerCreateInfoEXT __name = {                                                                         \
-    .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,                                                   \
-    .pNext = NULL,                                                                                                      \
-    .pUserData = NULL,                                                                                                  \
-    .flags = 0,                                                                                                         \
-    .pfnUserCallback = rei_vk_debug_callback,                                                                           \
-    .messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT,    \
-    .messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT, \
-  }
-
 #ifdef NDEBUG
 #  define REI_VK_CHECK(__call) __call
 #else
@@ -113,6 +102,14 @@ typedef struct rei_vk_queue_indices_t {
   u32 gfx, present, transfer;
 } rei_vk_queue_indices_t;
 
+typedef struct rei_vk_instance_t {
+  VkInstance handle;
+  #ifndef NDEBUG
+  VkDebugUtilsMessengerEXT dbg_messenger;
+  #endif
+  VkSurfaceKHR surface;
+} rei_vk_instance_t;
+
 typedef struct rei_vk_device_t {
   VkDevice handle;
   VkQueue gfx_queue;
@@ -183,43 +180,17 @@ typedef struct rei_vk_image_ci_t {
   VkImageAspectFlags aspect_mask;
 } rei_vk_image_ci_t;
 
-typedef struct rei_vk_render_pass_ci_t {
-  f32 r;
-  f32 g;
-  f32 b;
-  f32 a;
-  const rei_vk_swapchain_t* swapchain;
-} rei_vk_render_pass_ci_t;
-
 // Stringify VkResult for debugging purposes.
 const char* rei_vk_show_error (VkResult);
 
-VKAPI_ATTR VkBool32 VKAPI_CALL rei_vk_debug_callback (
-  VkDebugUtilsMessageSeverityFlagBitsEXT severity,
-  VkDebugUtilsMessageTypeFlagsEXT type,
-  const VkDebugUtilsMessengerCallbackDataEXT* callback_data,
-  void* user_data
-);
-
 u32 rei_vk_check_extensions (const VkExtensionProperties* available, u32 available_count, const char* const* required, u32 required_count);
 
-void rei_vk_create_instance (const char* const* required_ext, u32 required_ext_count, VkInstance* out);
+void rei_vk_create_instance_linux (xcb_connection_t* xcb_conn, u32 xcb_window, rei_vk_instance_t* out);
+void rei_vk_destroy_instance (rei_vk_instance_t* instance);
 
 b8 rei_vk_find_queue_indices (VkPhysicalDevice device, VkSurfaceKHR surface, rei_vk_queue_indices_t* out);
 
-void rei_vk_choose_gpu (
-  VkInstance instance,
-  VkSurfaceKHR surface,
-  const char* const* required_ext,
-  u32 required_ext_count,
-  VkPhysicalDevice* out
-);
-
-#ifdef __linux__
-   void rei_vk_create_xcb_surface (VkInstance instance, u32 window_handle, xcb_connection_t* xcb_connection, VkSurfaceKHR* out);
-#else
-#  error "Unhandled platform..."
-#endif
+void rei_vk_choose_gpu (const rei_vk_instance_t* instance, const char* const* required_ext, u32 required_ext_count, VkPhysicalDevice* out);
 
 void rei_vk_create_device (
   VkPhysicalDevice physical_device,
@@ -261,8 +232,16 @@ void rei_vk_create_swapchain (
 
 void rei_vk_destroy_swapchain (const rei_vk_device_t* device, VmaAllocator allocator, rei_vk_swapchain_t* swapchain);
 
-void rei_vk_create_render_pass (const rei_vk_device_t* device, const rei_vk_render_pass_ci_t* create_info, rei_vk_render_pass_t* out);
+void rei_vk_create_render_pass (
+  const rei_vk_device_t* device,
+  const rei_vk_swapchain_t* swapchain,
+  const rei_vec4_t* clear_color,
+  rei_vk_render_pass_t* out
+);
+
 void rei_vk_destroy_render_pass (const rei_vk_device_t* device, rei_vk_render_pass_t* render_pass);
+
+void rei_vk_create_cmd_pool (const rei_vk_device_t* device, u32 queue_index, VkCommandPoolCreateFlags flags, VkCommandPool* out);
 
 void rei_vk_create_frame_data (const rei_vk_device_t* device, VkCommandPool cmd_pool, rei_vk_frame_data_t* out);
 
@@ -349,6 +328,21 @@ void rei_vk_create_texture_mipmapped (
   const rei_vk_imm_ctxt_t* context,
   const rei_image_t* src,
   rei_vk_image_t* out
+);
+
+void rei_vk_create_descriptor_layout (
+  const rei_vk_device_t* device,
+  u32 bind_count,
+  const VkDescriptorSetLayoutBinding* bindings,
+  VkDescriptorSetLayout* out
+);
+
+void rei_vk_create_descriptor_pool (
+  const rei_vk_device_t* device,
+  u32 max_count,
+  u32 size_count,
+  const VkDescriptorPoolSize* sizes,
+  VkDescriptorPool* out
 );
 
 void rei_vk_allocate_descriptors (

@@ -15,18 +15,15 @@
 int main (void) {
   struct timeval timer_start;
 
-  VkInstance instance;
-  #ifndef NDEBUG
-  VkDebugUtilsMessengerEXT debug_messenger;
-  #endif
+  // TODO move this data away from the stack.
+  rei_vk_instance_t vk_instance;
 
   rei_xcb_window_t window;
-  VkSurfaceKHR window_surface;
-  VkPhysicalDevice physical_device = VK_NULL_HANDLE;
+  VkPhysicalDevice vk_physical_device = VK_NULL_HANDLE;
   rei_vk_device_t vk_device;
   VmaAllocator vk_allocator;
 
-  rei_vk_swapchain_t swapchain;
+  rei_vk_swapchain_t vk_swapchain;
   rei_vk_render_pass_t vk_render_pass;
   u32 frame_index = 0;
   VkCommandPool vk_frame_cmd_pool;
@@ -48,112 +45,74 @@ int main (void) {
   // Start timer
   gettimeofday (&timer_start, NULL);
 
-  REI_VK_CHECK (volkInitialize ());
-
-  { // Create instance and debug messenger.
-    const char* const required_extensions[] = {
-      VK_KHR_SURFACE_EXTENSION_NAME,
-      VK_KHR_XCB_SURFACE_EXTENSION_NAME,
-      #ifndef NDEBUG
-      VK_EXT_DEBUG_UTILS_EXTENSION_NAME
-      #endif
-    };
-
-    rei_vk_create_instance (required_extensions, REI_ARRAY_SIZE (required_extensions), &instance);
-  }
-
-  #ifndef NDEBUG
-    {
-      REI_VK_DEBUG_MESSENGER_CI (create_info);
-      REI_VK_CHECK (vkCreateDebugUtilsMessengerEXT (instance, &create_info, NULL, &debug_messenger));
-    }
-  #endif
-
   #ifdef __linux__
      rei_create_xcb_window (640, 480, REI_FALSE, &window);
-     rei_vk_create_xcb_surface (instance, window.handle, window.conn, &window_surface);
   #else
   #  error "Unhandled platform..."
   #endif
+
+  REI_VK_CHECK (volkInitialize ());
+
+  rei_vk_create_instance_linux (window.conn, window.handle, &vk_instance);
 
   { // Choose physical device and create logical one.
     const char* const required_extensions[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
     const u32 required_extension_count = (const u32) REI_ARRAY_SIZE (required_extensions);
 
-    rei_vk_choose_gpu (instance, window_surface, required_extensions, required_extension_count, &physical_device);
-    rei_vk_create_device (physical_device, window_surface, required_extensions, required_extension_count, &vk_device);
+    rei_vk_choose_gpu (&vk_instance, required_extensions, required_extension_count, &vk_physical_device);
+    rei_vk_create_device (vk_physical_device, vk_instance.surface, required_extensions, required_extension_count, &vk_device);
   }
 
-  rei_vk_create_allocator (instance, physical_device, &vk_device, &vk_allocator);
+  rei_vk_create_allocator (vk_instance.handle, vk_physical_device, &vk_device, &vk_allocator);
 
   rei_vk_create_swapchain (
     &vk_device,
     vk_allocator,
     VK_NULL_HANDLE,
-    window_surface,
+    vk_instance.surface,
     window.width,
     window.height,
-    physical_device,
-    &swapchain
+    vk_physical_device,
+    &vk_swapchain
   );
 
-  {
-    rei_vk_render_pass_ci_t create_info = {.r = 1.f, .g = 1.f, .b = 0.f, .a = 1.f, .swapchain = &swapchain};
-    rei_vk_create_render_pass (&vk_device, &create_info, &vk_render_pass);
-  }
+  rei_vk_create_render_pass (&vk_device, &vk_swapchain, &(const rei_vec4_t) {.x = 1.f, .y = 1.f, .z = 0.f, .w = 1.f}, &vk_render_pass);
 
-  { // Create one command pool and frame data (sync structures, cmd buffers) for every frame in flight.
-    VkCommandPoolCreateInfo create_info = {
-      .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
-      .queueFamilyIndex = vk_device.gfx_index,
+  // Create one command pool and frame data (sync structures, cmd buffers) for every frame in flight.
+  rei_vk_create_cmd_pool (&vk_device, vk_device.gfx_index, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT, &vk_frame_cmd_pool);
 
-      .pNext = NULL,
-      .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT
-    };
+  vk_frames = malloc (sizeof *vk_frames * REI_VK_FRAME_COUNT);
+  for (u32 i = 0; i < REI_VK_FRAME_COUNT; ++i) rei_vk_create_frame_data (&vk_device, vk_frame_cmd_pool, &vk_frames[i]);
 
-    REI_VK_CHECK (vkCreateCommandPool (vk_device.handle, &create_info, NULL, &vk_frame_cmd_pool));
-
-    vk_frames = malloc (sizeof *vk_frames * REI_VK_FRAME_COUNT);
-    for (u32 i = 0; i < REI_VK_FRAME_COUNT; ++i) rei_vk_create_frame_data (&vk_device, vk_frame_cmd_pool, &vk_frames[i]);
-  }
+  rei_vk_create_imm_ctxt (&vk_device, vk_device.gfx_index, &imm_ctxt);
 
   // FIXME max_lod is hardcoded.
   rei_vk_create_sampler (&vk_device, 0.f, 0.f, VK_FILTER_NEAREST, &default_sampler);
 
-  {
-    VkDescriptorSetLayoutBinding albedo = {
+  rei_vk_create_descriptor_layout (
+    &vk_device,
+    1,
+    &(const VkDescriptorSetLayoutBinding) {
       .binding = 0,
       .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
       .descriptorCount = 1,
       .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
       .pImmutableSamplers = NULL,
-    };
+    },
+    &default_desc_layout
+  );
 
-    VkDescriptorSetLayoutCreateInfo create_info = {
-      .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-      .pNext = NULL,
-      .flags = 0,
-      .bindingCount = 1,
-      .pBindings = &albedo,
-    };
-
-    REI_VK_CHECK (vkCreateDescriptorSetLayout (vk_device.handle, &create_info, NULL, &default_desc_layout));
-  }
-
-  rei_vk_create_imm_ctxt (&vk_device, vk_device.gfx_index, &imm_ctxt);
-
-  { // Create main descriptor pool for miscellaneous resources (e.g. IMGUI font texture).
-    VkDescriptorPoolCreateInfo create_info = {
-      .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-      .pNext = NULL,
-      .flags = 0,
-      .maxSets = 1,
-      .poolSizeCount = 1,
-      .pPoolSizes = (VkDescriptorPoolSize[]) {{.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .descriptorCount = 1}}
-    };
-
-    REI_VK_CHECK (vkCreateDescriptorPool (vk_device.handle, &create_info, NULL, &main_desc_pool));
-  }
+  // Create main descriptor pool for miscellaneous resources (e.g. IMGUI font texture).
+  rei_vk_create_descriptor_pool (
+    &vk_device,
+    1,
+    1,
+    &(const VkDescriptorPoolSize) {
+      .descriptorCount = 1,
+      .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER
+    },
+    &main_desc_pool
+  );
 
   rei_vk_create_pipeline_layout (
     &vk_device,
@@ -204,8 +163,8 @@ int main (void) {
 
     VkRect2D scissor = {
       .offset = {0, 0},
-      .extent.width = swapchain.width,
-      .extent.height = swapchain.height
+      .extent.width = vk_swapchain.width,
+      .extent.height = vk_swapchain.height
     };
 
     VkViewport viewport = {
@@ -213,8 +172,8 @@ int main (void) {
       .y = 0.f,
       .minDepth = 0.f,
       .maxDepth = 1.f,
-      .width = (f32) swapchain.width,
-      .height = (f32) swapchain.height
+      .width = (f32) vk_swapchain.width,
+      .height = (f32) vk_swapchain.height
     };
 
     VkPipelineViewportStateCreateInfo viewport_state = {
@@ -297,7 +256,7 @@ int main (void) {
   rei_create_camera (
     &(rei_vec3_t) {.x = 0.f, .y = 1.f, .z = 0.f},
     &(rei_vec3_t) {.x = 0.f, .y = 1.f, .z = 60.f},
-    (f32) (swapchain.width / swapchain.height),
+    (f32) (vk_swapchain.width / vk_swapchain.height),
     -90.f,
     0.f,
     &camera
@@ -337,7 +296,7 @@ int main (void) {
 
     VkCommandBuffer vk_cmd_buffer;
     const rei_vk_frame_data_t* vk_current_frame = &vk_frames[frame_index];
-    const u32 vk_image_index = rei_vk_begin_frame (&vk_device, &vk_render_pass, vk_current_frame, &swapchain, &vk_cmd_buffer);
+    const u32 vk_image_index = rei_vk_begin_frame (&vk_device, &vk_render_pass, vk_current_frame, &vk_swapchain, &vk_cmd_buffer);
 
     rei_mat4_t view_projection;
     rei_camera_get_view_projection (&camera, &view_projection);
@@ -354,7 +313,7 @@ int main (void) {
 
     rei_imgui_draw_cmd (vk_cmd_buffer, &imgui_frame_data, imgui_data, frame_index);
 
-    rei_vk_end_frame (&vk_device, vk_current_frame, &swapchain, vk_image_index);
+    rei_vk_end_frame (&vk_device, vk_current_frame, &vk_swapchain, vk_image_index);
     ++frame_index;
   }
 
@@ -381,16 +340,11 @@ RESOURCE_CLEANUP_L:
   vkDestroyCommandPool (vk_device.handle, vk_frame_cmd_pool, NULL);
 
   rei_vk_destroy_render_pass (&vk_device, &vk_render_pass);
-  rei_vk_destroy_swapchain (&vk_device, vk_allocator, &swapchain);
+  rei_vk_destroy_swapchain (&vk_device, vk_allocator, &vk_swapchain);
 
   vmaDestroyAllocator (vk_allocator);
   vkDestroyDevice (vk_device.handle, NULL);
+
+  rei_vk_destroy_instance (&vk_instance);
   rei_destroy_xcb_window (&window);
-
-  vkDestroySurfaceKHR (instance, window_surface, NULL);
-
-  #ifndef NDEBUG
-    vkDestroyDebugUtilsMessengerEXT (instance, debug_messenger, NULL);
-  #endif
-  vkDestroyInstance (instance, NULL);
 }

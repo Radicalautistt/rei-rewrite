@@ -11,6 +11,24 @@
 #include <lz4/lib/lz4.h>
 #include <VulkanMemoryAllocator/include/vk_mem_alloc.h>
 
+static VKAPI_ATTR VkBool32 VKAPI_CALL _s_vk_debug_callback (
+  VkDebugUtilsMessageSeverityFlagBitsEXT severity,
+  VkDebugUtilsMessageTypeFlagsEXT type,
+  const VkDebugUtilsMessengerCallbackDataEXT* callback_data,
+  void* user_data) {
+
+  (void) type;
+  (void) user_data;
+
+  if (severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT)
+    REI_LOG_ERROR ("%s\n", callback_data->pMessage);
+
+  if (severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT)
+    REI_LOG_WARN ("%s\n", callback_data->pMessage);
+
+  return VK_FALSE;
+}
+
 const char* rei_vk_show_error (VkResult error) {
   #define SHOW_ERROR(name) case VK_##name: return #name
 
@@ -44,24 +62,6 @@ const char* rei_vk_show_error (VkResult error) {
   #undef SHOW_ERROR
 }
 
-VKAPI_ATTR VkBool32 VKAPI_CALL rei_vk_debug_callback (
-  VkDebugUtilsMessageSeverityFlagBitsEXT severity,
-  VkDebugUtilsMessageTypeFlagsEXT type,
-  const VkDebugUtilsMessengerCallbackDataEXT* callback_data,
-  void* user_data) {
-
-  (void) type;
-  (void) user_data;
-
-  if (severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT)
-    REI_LOG_ERROR ("%s\n", callback_data->pMessage);
-
-  if (severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT)
-    REI_LOG_WARN ("%s\n", callback_data->pMessage);
-
-  return VK_FALSE;
-}
-
 u32 rei_vk_check_extensions (const VkExtensionProperties* available, u32 available_count, const char* const* required, u32 required_count) {
   u32 matched_count = 0;
 
@@ -77,21 +77,30 @@ u32 rei_vk_check_extensions (const VkExtensionProperties* available, u32 availab
   return matched_count;
 }
 
-void rei_vk_create_instance (const char* const* required_ext, u32 required_ext_count, VkInstance* out) {
-  { // Check support for required extensions.
-    u32 available_count = 0;
-    REI_VK_CHECK (vkEnumerateInstanceExtensionProperties (NULL, &available_count, NULL));
+void rei_vk_create_instance_linux (xcb_connection_t* xcb_conn, u32 xcb_window, rei_vk_instance_t* out) {
+  const char* const required_ext[] = {
+    VK_KHR_SURFACE_EXTENSION_NAME,
+    VK_KHR_XCB_SURFACE_EXTENSION_NAME,
+    #ifndef NDEBUG
+    VK_EXT_DEBUG_UTILS_EXTENSION_NAME
+    #endif
+  };
 
-    VkExtensionProperties* available = alloca (sizeof *available * available_count);
-    REI_VK_CHECK (vkEnumerateInstanceExtensionProperties (NULL, &available_count, available));
+  u32 required_ext_count = REI_ARRAY_SIZE (required_ext);
 
-    u32 matched_count = rei_vk_check_extensions (available, available_count, required_ext, required_ext_count);
+  // Check support for required extensions.
+  u32 available_count = 0;
+  REI_VK_CHECK (vkEnumerateInstanceExtensionProperties (NULL, &available_count, NULL));
 
-    if (matched_count != required_ext_count) {
-      REI_LOG_STR_ERROR ("Vk initialization failure: required vulkan extensions aren't supported by this device.");
-      for (u32 i = 0; i < required_ext_count; ++i) REI_LOG_ERROR ("\t%s", required_ext[i]);
-      exit (EXIT_FAILURE);
-    }
+  VkExtensionProperties* available = alloca (sizeof *available * available_count);
+  REI_VK_CHECK (vkEnumerateInstanceExtensionProperties (NULL, &available_count, available));
+
+  u32 matched_count = rei_vk_check_extensions (available, available_count, required_ext, required_ext_count);
+
+  if (matched_count != required_ext_count) {
+    REI_LOG_STR_ERROR ("Vk initialization failure: required vulkan extensions aren't supported by this device.");
+    for (u32 i = 0; i < required_ext_count; ++i) REI_LOG_ERROR ("\t%s", required_ext[i]);
+    exit (EXIT_FAILURE);
   }
 
   VkInstanceCreateInfo create_info = {
@@ -102,15 +111,46 @@ void rei_vk_create_instance (const char* const* required_ext, u32 required_ext_c
   };
 
   #ifndef NDEBUG
-  REI_VK_DEBUG_MESSENGER_CI (debug_info);
+  VkDebugUtilsMessengerCreateInfoEXT dbg_messenger_ci = {
+    .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
+    .pNext = NULL,
+    .pUserData = NULL,
+    .flags = 0,
+    .pfnUserCallback = _s_vk_debug_callback,
+    .messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT,
+    .messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT,
+  };
 
-  create_info.pNext = &debug_info;
+  create_info.pNext = &dbg_messenger_ci;
   create_info.enabledLayerCount = 1;
   create_info.ppEnabledLayerNames = (const char*[]) {"VK_LAYER_KHRONOS_validation"};
   #endif
 
-  REI_VK_CHECK (vkCreateInstance (&create_info, NULL, out));
-  volkLoadInstanceOnly (*out);
+  REI_VK_CHECK (vkCreateInstance (&create_info, NULL, &out->handle));
+  volkLoadInstanceOnly (out->handle);
+
+  #ifndef NDEBUG
+  REI_VK_CHECK (vkCreateDebugUtilsMessengerEXT (out->handle, &dbg_messenger_ci, NULL, &out->dbg_messenger));
+  #endif
+
+  // Create XCB window surface.
+  VkXcbSurfaceCreateInfoKHR surface_ci = {
+    .sType = VK_STRUCTURE_TYPE_XCB_SURFACE_CREATE_INFO_KHR,
+    .pNext = NULL,
+    .flags = 0,
+    .connection = xcb_conn,
+    .window = xcb_window
+  };
+
+  REI_VK_CHECK (vkCreateXcbSurfaceKHR (out->handle, &surface_ci, NULL, &out->surface));
+}
+
+void rei_vk_destroy_instance (rei_vk_instance_t* instance) {
+  vkDestroySurfaceKHR (instance->handle, instance->surface, NULL);
+  #ifndef NDEBUG
+  vkDestroyDebugUtilsMessengerEXT (instance->handle, instance->dbg_messenger, NULL);
+  #endif
+  vkDestroyInstance (instance->handle, NULL);
 }
 
 b8 rei_vk_find_queue_indices (VkPhysicalDevice device, VkSurfaceKHR surface, rei_vk_queue_indices_t* out) {
@@ -145,20 +185,14 @@ b8 rei_vk_find_queue_indices (VkPhysicalDevice device, VkSurfaceKHR surface, rei
   return REI_FALSE;
 }
 
-void rei_vk_choose_gpu (
-  VkInstance instance,
-  VkSurfaceKHR surface,
-  const char* const* required_ext,
-  u32 required_ext_count,
-  VkPhysicalDevice* out) {
-
+void rei_vk_choose_gpu (const rei_vk_instance_t* instance, const char* const* required_ext, u32 required_ext_count, VkPhysicalDevice* out) {
   *out = VK_NULL_HANDLE;
 
   u32 device_count = 0;
-  REI_VK_CHECK (vkEnumeratePhysicalDevices (instance, &device_count, NULL));
+  REI_VK_CHECK (vkEnumeratePhysicalDevices (instance->handle, &device_count, NULL));
 
   VkPhysicalDevice* devices = alloca (sizeof *devices * device_count);
-  REI_VK_CHECK (vkEnumeratePhysicalDevices (instance, &device_count, devices));
+  REI_VK_CHECK (vkEnumeratePhysicalDevices (instance->handle, &device_count, devices));
 
   for (u32 i = 0; i < device_count; ++i) {
     VkPhysicalDevice current = devices[i];
@@ -172,12 +206,12 @@ void rei_vk_choose_gpu (
     const u32 matched_ext_count = rei_vk_check_extensions (extensions, ext_count, required_ext, required_ext_count);
 
     u32 format_count = 0, present_mode_count = 0;
-    REI_VK_CHECK (vkGetPhysicalDeviceSurfaceFormatsKHR (current, surface, &format_count, NULL));
-    REI_VK_CHECK (vkGetPhysicalDeviceSurfacePresentModesKHR (current, surface, &present_mode_count, NULL));
+    REI_VK_CHECK (vkGetPhysicalDeviceSurfaceFormatsKHR (current, instance->surface, &format_count, NULL));
+    REI_VK_CHECK (vkGetPhysicalDeviceSurfacePresentModesKHR (current, instance->surface, &present_mode_count, NULL));
 
     rei_vk_queue_indices_t indices;
     const b8 supports_swapchain = format_count && present_mode_count;
-    const b8 has_queue_families = rei_vk_find_queue_indices (current, surface, &indices);
+    const b8 has_queue_families = rei_vk_find_queue_indices (current, instance->surface, &indices);
 
     if (has_queue_families && supports_swapchain && (matched_ext_count == required_ext_count)) {
       *out = current;
@@ -196,22 +230,6 @@ void rei_vk_choose_gpu (
     exit (EXIT_FAILURE);
   }
 }
-
-#ifdef __linux__
-   void rei_vk_create_xcb_surface (VkInstance instance, u32 window_handle, xcb_connection_t* xcb_connection, VkSurfaceKHR* out) {
-     VkXcbSurfaceCreateInfoKHR create_info = {
-       .sType = VK_STRUCTURE_TYPE_XCB_SURFACE_CREATE_INFO_KHR,
-       .pNext = NULL,
-       .flags = 0,
-       .connection = xcb_connection,
-       .window = window_handle
-     };
-
-     REI_VK_CHECK (vkCreateXcbSurfaceKHR (instance, &create_info, NULL, out));
-   }
-#else
-#  error "Unhandled platform..."
-#endif
 
 void rei_vk_create_device (
   VkPhysicalDevice physical_device,
@@ -552,14 +570,19 @@ void rei_vk_destroy_swapchain (const rei_vk_device_t* device, VmaAllocator alloc
   free (swapchain->images);
 }
 
-void rei_vk_create_render_pass (const rei_vk_device_t* device, const rei_vk_render_pass_ci_t* create_info, rei_vk_render_pass_t* out) {
+void rei_vk_create_render_pass (
+  const rei_vk_device_t* device,
+  const rei_vk_swapchain_t* swapchain,
+  const rei_vec4_t* clear_color,
+  rei_vk_render_pass_t* out) {
+
   out->clear_value_count = 2;
   out->clear_values = malloc (sizeof *out->clear_values * out->clear_value_count);
 
-  out->clear_values[0].color.float32[0] = create_info->r;
-  out->clear_values[0].color.float32[1] = create_info->g;
-  out->clear_values[0].color.float32[2] = create_info->b;
-  out->clear_values[0].color.float32[3] = create_info->a;
+  out->clear_values[0].color.float32[0] = clear_color->x;
+  out->clear_values[0].color.float32[1] = clear_color->y;
+  out->clear_values[0].color.float32[2] = clear_color->z;
+  out->clear_values[0].color.float32[3] = clear_color->w;
   out->clear_values[1].depthStencil.depth = 1.f;
   out->clear_values[1].depthStencil.stencil = 0;
 
@@ -567,7 +590,7 @@ void rei_vk_create_render_pass (const rei_vk_device_t* device, const rei_vk_rend
     VkAttachmentDescription attachments[2] = {
       [0] = { // Color attachment
         .flags = 0,
-        .format = create_info->swapchain->format,
+        .format = swapchain->format,
         .samples = VK_SAMPLE_COUNT_1_BIT,
         .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
         .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
@@ -631,8 +654,6 @@ void rei_vk_create_render_pass (const rei_vk_device_t* device, const rei_vk_rend
   }
 
   // Create framebuffers for every swapchain image.
-  const rei_vk_swapchain_t* swapchain = create_info->swapchain;
-
   VkFramebufferCreateInfo vk_create_info = {
     .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
     .pNext = NULL,
@@ -659,6 +680,17 @@ void rei_vk_destroy_render_pass (const rei_vk_device_t* device, rei_vk_render_pa
 
   free (render_pass->clear_values);
   vkDestroyRenderPass (device->handle, render_pass->handle, NULL);
+}
+
+void rei_vk_create_cmd_pool (const rei_vk_device_t* device, u32 queue_index, VkCommandPoolCreateFlags flags, VkCommandPool* out) {
+  VkCommandPoolCreateInfo create_info = {
+    .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+    .pNext = NULL,
+    .flags = flags,
+    .queueFamilyIndex = queue_index,
+  };
+
+  REI_VK_CHECK (vkCreateCommandPool (device->handle, &create_info, NULL, out));
 }
 
 void rei_vk_create_frame_data (const rei_vk_device_t* device, VkCommandPool cmd_pool, rei_vk_frame_data_t* out) {
@@ -1386,6 +1418,42 @@ void rei_vk_create_texture_mipmapped (
 
   rei_vk_end_imm_cmd (device, context, cmd_buffer);
   rei_vk_destroy_buffer (allocator, &staging);
+}
+
+void rei_vk_create_descriptor_layout (
+  const rei_vk_device_t* device,
+  u32 bind_count,
+  const VkDescriptorSetLayoutBinding* bindings,
+  VkDescriptorSetLayout* out) {
+
+  VkDescriptorSetLayoutCreateInfo create_info = {
+    .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+    .pNext = NULL,
+    .flags = 0,
+    .bindingCount = bind_count,
+    .pBindings = bindings,
+  };
+
+  REI_VK_CHECK (vkCreateDescriptorSetLayout (device->handle, &create_info, NULL, out));
+}
+
+void rei_vk_create_descriptor_pool (
+  const rei_vk_device_t* device,
+  u32 max_count,
+  u32 size_count,
+  const VkDescriptorPoolSize* sizes,
+  VkDescriptorPool* out) {
+
+  VkDescriptorPoolCreateInfo create_info = {
+    .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+    .pNext = NULL,
+    .flags = 0,
+    .maxSets = max_count,
+    .poolSizeCount = size_count,
+    .pPoolSizes = sizes
+  };
+
+  REI_VK_CHECK (vkCreateDescriptorPool (device->handle, &create_info, NULL, out));
 }
 
 void rei_vk_allocate_descriptors (
