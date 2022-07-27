@@ -13,6 +13,8 @@
 
 #warning "TODO handle SIMD instruction sets availability."
 
+#define REI_RADIANS(__degrees) (__degrees * 0.01745329251994329576923690768489f)
+
 // Set of functions that operate on/return a 128 bit simd register.
 static inline __m128 rei_m128_negate (__m128 value) {
   return _mm_sub_ps (_mm_setzero_ps (), value);
@@ -176,10 +178,6 @@ static inline void rei_mat4_mul (const rei_mat4_t* a, const rei_mat4_t* b, rei_m
 
     _mm_store_ps (&out->rows[i].x, _mm_add_ps (left, right));
   }
-}
-
-static inline f32 rei_radians (f32 degrees) {
-  return degrees * 0.01745329251994329576923690768489f;
 }
 
 static inline void rei_look_at (const rei_vec3_t* eye, const rei_vec3_t* center, const rei_vec3_t* up, rei_mat4_t* out) {

@@ -38,6 +38,7 @@ int main (void) {
 
   rei_model_t test_model;
   rei_camera_t camera;
+  rei_mat4_t* camera_projection;
 
   rei_imgui_ctxt_t imgui_ctxt;
   rei_imgui_frame_data_t imgui_frame_data;
@@ -253,14 +254,10 @@ int main (void) {
 
   rei_create_model ("assets/sponza/Sponza.gltf", &vk_device, vk_allocator, &imm_ctxt, default_sampler, default_desc_layout, &test_model);
 
-  rei_create_camera (
-    &(rei_vec3_t) {.x = 0.f, .y = 1.f, .z = 0.f},
-    &(rei_vec3_t) {.x = 0.f, .y = 1.f, .z = 60.f},
-    (f32) (vk_swapchain.width / vk_swapchain.height),
-    -90.f,
-    0.f,
-    &camera
-  );
+  rei_camera_create (0.f, 1.f, 0.f, -90.f, 0.f, &camera);
+
+  rei_camera_position_t camera_position = {.data = {.x = 0.f, .y = 1.f, .z = 60.f}};
+  camera_projection = rei_camera_create_projection ((f32) (vk_swapchain.width / vk_swapchain.height));
 
   rei_create_imgui_ctxt (&vk_device, vk_allocator, &imm_ctxt, &imgui_ctxt);
   rei_imgui_create_frame_data (&vk_device, vk_allocator, &vk_render_pass, main_desc_pool, default_desc_layout, &imgui_ctxt, &imgui_frame_data);
@@ -283,10 +280,10 @@ int main (void) {
         const xcb_key_press_event_t* key_press = (const xcb_key_press_event_t*) event;
 
         if (key_press->detail == REI_X11_KEY_ESCAPE) goto RESOURCE_CLEANUP_L;
-        if (key_press->detail == REI_X11_KEY_A) rei_move_camera_left (&camera, delta_time);
-        if (key_press->detail == REI_X11_KEY_D) rei_move_camera_right (&camera, delta_time);
-        if (key_press->detail == REI_X11_KEY_W) rei_move_camera_forward (&camera, delta_time);
-        if (key_press->detail == REI_X11_KEY_S) rei_move_camera_backward (&camera, delta_time);
+        if (key_press->detail == REI_X11_KEY_A) rei_camera_move_left (&camera, &camera_position, delta_time);
+        if (key_press->detail == REI_X11_KEY_D) rei_camera_move_right (&camera, &camera_position, delta_time);
+        if (key_press->detail == REI_X11_KEY_W) rei_camera_move_forward (&camera, &camera_position, delta_time);
+        if (key_press->detail == REI_X11_KEY_S) rei_camera_move_backward (&camera, &camera_position, delta_time);
       }
 
       free (event);
@@ -299,7 +296,7 @@ int main (void) {
     const u32 vk_image_index = rei_vk_begin_frame (&vk_device, &vk_render_pass, vk_current_frame, &vk_swapchain, &vk_cmd_buffer);
 
     rei_mat4_t view_projection;
-    rei_camera_get_view_projection (&camera, &view_projection);
+    rei_camera_get_view_projection (&camera, &camera_position, camera_projection, &view_projection);
 
     vkCmdBindPipeline (vk_cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, default_pipeline);
     rei_draw_model_cmd (&test_model, vk_cmd_buffer, default_pipeline_layout, &view_projection);
@@ -319,6 +316,8 @@ int main (void) {
 
 RESOURCE_CLEANUP_L:
   vkDeviceWaitIdle (vk_device.handle);
+
+  free (camera_projection);
 
 #if 0
   rei_destroy_openal_ctxt (&openal_ctxt);
