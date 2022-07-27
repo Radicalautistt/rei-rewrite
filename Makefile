@@ -20,5 +20,8 @@ obj/%.o: src/%.c
 run: rei
 	./rei
 
+profile:
+	perf stat record -d ./rei
+
 clean:
 	rm -r obj/

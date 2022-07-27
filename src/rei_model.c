@@ -236,8 +236,11 @@ void rei_create_model (
 
   { // Create model matrix.
     const rei_gltf_node_t* default_node = &gltf.nodes[0];
-    const rei_vec3_t scale_vector = {.x = default_node->scale_vector[0], .y = default_node->scale_vector[1], .z = default_node->scale_vector[2]};
 
+    rei_vec3_u scale_vector;
+    scale_vector.x = default_node->scale_vector[0];
+    scale_vector.y = default_node->scale_vector[1];
+    scale_vector.z = default_node->scale_vector[2];
     rei_mat4_create_default (&out->model_matrix);
     rei_mat4_scale (&out->model_matrix, &scale_vector);
   }

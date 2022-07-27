@@ -573,7 +573,7 @@ void rei_vk_destroy_swapchain (const rei_vk_device_t* device, VmaAllocator alloc
 void rei_vk_create_render_pass (
   const rei_vk_device_t* device,
   const rei_vk_swapchain_t* swapchain,
-  const rei_vec4_t* clear_color,
+  const rei_vec4_u* clear_color,
   rei_vk_render_pass_t* out) {
 
   out->clear_value_count = 2;

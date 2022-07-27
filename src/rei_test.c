@@ -77,7 +77,7 @@ int main (void) {
     &vk_swapchain
   );
 
-  rei_vk_create_render_pass (&vk_device, &vk_swapchain, &(const rei_vec4_t) {.x = 1.f, .y = 1.f, .z = 0.f, .w = 1.f}, &vk_render_pass);
+  rei_vk_create_render_pass (&vk_device, &vk_swapchain, &(const rei_vec4_u) {.x = 1.f, .y = 1.f, .z = 0.f, .w = 1.f}, &vk_render_pass);
 
   // Create one command pool and frame data (sync structures, cmd buffers) for every frame in flight.
   rei_vk_create_cmd_pool (&vk_device, vk_device.gfx_index, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT, &vk_frame_cmd_pool);

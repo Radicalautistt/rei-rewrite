@@ -44,7 +44,7 @@ void rei_camera_get_view_projection (
   const rei_mat4_t* projection,
   rei_mat4_t* out) {
 
-  rei_vec3_t center;
+  rei_vec3_u center;
   rei_mat4_t view;
 
   rei_vec3_add (&position->data, &camera->front, &center);
@@ -53,25 +53,25 @@ void rei_camera_get_view_projection (
 }
 
 void rei_camera_move_left (rei_camera_t* camera, rei_camera_position_t* position, f32 delta_time) {
-  rei_vec3_t temp;
+  rei_vec3_u temp;
   rei_vec3_mul_scalar (&camera->right, REI_CAMERA_SPEED * delta_time, &temp);
   rei_vec3_sub (&position->data, &temp, &position->data);
 }
 
 void rei_camera_move_right (rei_camera_t* camera, rei_camera_position_t* position, f32 delta_time) {
-  rei_vec3_t temp;
+  rei_vec3_u temp;
   rei_vec3_mul_scalar (&camera->right, REI_CAMERA_SPEED * delta_time, &temp);
   rei_vec3_add (&position->data, &temp, &position->data);
 }
 
 void rei_camera_move_forward (rei_camera_t* camera, rei_camera_position_t* position, f32 delta_time) {
-  rei_vec3_t temp;
+  rei_vec3_u temp;
   rei_vec3_mul_scalar (&camera->front, REI_CAMERA_SPEED * delta_time, &temp);
   rei_vec3_add (&position->data, &temp, &position->data);
 }
 
 void rei_camera_move_backward (rei_camera_t* camera, rei_camera_position_t* position, f32 delta_time) {
-  rei_vec3_t temp;
+  rei_vec3_u temp;
   rei_vec3_mul_scalar (&camera->front, REI_CAMERA_SPEED * delta_time, &temp);
   rei_vec3_sub (&position->data, &temp, &position->data);
 }

@@ -1,6 +1,14 @@
 #ifndef REI_TYPES_H
 #define REI_TYPES_H
 
+#include "rei_defines.h"
+
+#ifdef __linux__
+  #include <immintrin.h>
+#else
+  #error "Unhandled platform..."
+#endif
+
 typedef unsigned char u8;
 typedef unsigned short u16;
 typedef unsigned u32;
@@ -32,15 +40,21 @@ typedef enum rei_result_e {
 
 typedef struct rei_vec2_t {f32 x, y;} rei_vec2_t;
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wpadded"
+REI_IGNORE_WARN_START (-Wpadded)
 
-typedef struct __attribute__ ((aligned (16))) rei_vec3_t {f32 x, y, z;} rei_vec3_t;
+typedef union REI_ALIGN_AS (16) rei_vec3_u {
+  struct {f32 x, y, z;};
+  __m128 simd_reg;
+} rei_vec3_u;
 
-#pragma GCC diagnostic pop
+REI_IGNORE_WARN_STOP
 
-typedef struct rei_vec4_t {f32 x, y, z, w;} rei_vec4_t;
-typedef struct rei_mat4_t {rei_vec4_t rows[4];} rei_mat4_t;
+typedef union rei_vec4_u {
+  struct {f32 x, y, z, w;};
+  __m128 simd_reg;
+} rei_vec4_u;
+
+typedef struct rei_mat4_t {rei_vec4_u rows[4];} rei_mat4_t;
 
 typedef struct rei_vertex_t {
   f32 x, y, z;

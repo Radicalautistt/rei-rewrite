@@ -3,15 +3,19 @@
 
 #include "rei_types.h"
 
+REI_IGNORE_WARN_START (-Wpadded)
+
 typedef struct rei_camera_t {
   f32 yaw, pitch;
-  rei_vec3_t up, front, right;
+  rei_vec3_u up, front, right;
 } rei_camera_t;
 
 typedef struct rei_camera_position_t {
   f32 last_x, last_y;
-  rei_vec3_t data;
+  rei_vec3_u data;
 } rei_camera_position_t;
+
+REI_IGNORE_WARN_STOP
 
 void rei_camera_create (f32 up_x, f32 up_y, f32 up_z, f32 yaw, f32 pitch, rei_camera_t* out);
 rei_mat4_t* rei_camera_create_projection (f32 aspect);
