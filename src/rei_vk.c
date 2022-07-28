@@ -29,6 +29,47 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL _s_vk_debug_callback (
   return VK_FALSE;
 }
 
+static void _s_set_swapchain_surface_format (VkPhysicalDevice physical_device, VkSurfaceKHR surface, VkSurfaceFormatKHR* out) {
+  u32 available_count = 0;
+  REI_VK_CHECK (vkGetPhysicalDeviceSurfaceFormatsKHR (physical_device, surface, &available_count, NULL));
+
+  VkSurfaceFormatKHR* available = alloca (sizeof *available * available_count);
+  REI_VK_CHECK (vkGetPhysicalDeviceSurfaceFormatsKHR (physical_device, surface, &available_count, available));
+
+  const VkFormat supported[] = {VK_FORMAT_B8G8R8A8_SRGB};
+  const u32 supported_count = REI_ARRAY_SIZE (supported);
+
+  for (u32 i = 0; i < available_count; ++i) {
+    const VkSurfaceFormatKHR* current = &available[i];
+
+    for (u32 j = 0; j < supported_count; ++j) {
+      if (current->format == supported[j] && current->colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
+        *out = available[i];
+        break;
+      }
+    }
+  }
+}
+
+static void _s_set_swapchain_present_mode (VkPhysicalDevice physical_device, VkSurfaceKHR surface, VkPresentModeKHR* out) {
+  // Set out to be FIFO by default since it is present on all the devices.
+  *out = VK_PRESENT_MODE_FIFO_KHR;
+
+  u32 count = 0;
+  REI_VK_CHECK (vkGetPhysicalDeviceSurfacePresentModesKHR (physical_device, surface, &count, NULL));
+
+  VkPresentModeKHR* modes = alloca (sizeof *modes * count);
+  REI_VK_CHECK (vkGetPhysicalDeviceSurfacePresentModesKHR (physical_device, surface, &count, modes));
+
+  // But prefer Mailbox.
+  for (u32 i = 0; i < count; ++i) {
+    if (modes[i] == VK_PRESENT_MODE_MAILBOX_KHR) {
+      *out = VK_PRESENT_MODE_MAILBOX_KHR;
+      break;
+    }
+  }
+}
+
 const char* rei_vk_show_error (VkResult error) {
   #define SHOW_ERROR(name) case VK_##name: return #name
 
@@ -447,44 +488,12 @@ void rei_vk_create_swapchain (
     if (capabilities.maxImageCount && min_images_count > capabilities.maxImageCount)
       min_images_count = capabilities.maxImageCount;
 
-    // Choose surface format
     VkSurfaceFormatKHR surface_format;
-    {
-      u32 count = 0;
-      REI_VK_CHECK (vkGetPhysicalDeviceSurfaceFormatsKHR (physical_device, surface, &count, NULL));
-
-      VkSurfaceFormatKHR* formats = alloca (sizeof *formats * count);
-      REI_VK_CHECK (vkGetPhysicalDeviceSurfaceFormatsKHR (physical_device, surface, &count, formats));
-
-      surface_format = formats[0];
-      for (u32 i = 0; i < count; ++i) {
-	const VkSurfaceFormatKHR* current = &formats[i];
-
-        if (current->format == REI_VK_IMAGE_FORMAT && current->colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
-          surface_format = formats[i];
-          break;
-        }
-      }
-    }
-
+    _s_set_swapchain_surface_format (physical_device, surface, &surface_format);
     out->format = surface_format.format;
 
-    // Choose present mode
-    VkPresentModeKHR present_mode = VK_PRESENT_MODE_FIFO_KHR;
-    {
-      u32 count = 0;
-      REI_VK_CHECK (vkGetPhysicalDeviceSurfacePresentModesKHR (physical_device, surface, &count, NULL));
-
-      VkPresentModeKHR* modes = alloca (sizeof *modes * count);
-      REI_VK_CHECK (vkGetPhysicalDeviceSurfacePresentModesKHR (physical_device, surface, &count, modes));
-
-      for (u32 i = 0; i < count; ++i) {
-        if (modes[i] == VK_PRESENT_MODE_MAILBOX_KHR) {
-          present_mode = VK_PRESENT_MODE_MAILBOX_KHR;
-	  break;
-	}
-      }
-    }
+    VkPresentModeKHR present_mode;
+    _s_set_swapchain_present_mode (physical_device, surface, &present_mode);
 
     VkSwapchainCreateInfoKHR info = {
       .clipped = VK_TRUE,
@@ -516,12 +525,12 @@ void rei_vk_create_swapchain (
 
   { // Create swapchain images and views
     vkGetSwapchainImagesKHR (device->handle, out->handle, &out->image_count, NULL);
-    const u32 image_count = out->image_count;
 
-    out->images = malloc (sizeof *out->images * image_count);
-    vkGetSwapchainImagesKHR (device->handle, out->handle, &out->image_count, out->images);
+    out->images = malloc (sizeof *out->images);
+    out->images->handles = malloc (sizeof *out->images->handles * out->image_count);
+    out->images->views = malloc (sizeof *out->images->views * out->image_count);
 
-    out->views = malloc (sizeof *out->views * image_count);
+    vkGetSwapchainImagesKHR (device->handle, out->handle, &out->image_count, out->images->handles);
 
     VkImageViewCreateInfo info = {
       .pNext = NULL,
@@ -542,9 +551,9 @@ void rei_vk_create_swapchain (
       .subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT
     };
 
-    for (u32 i = 0; i < image_count; ++i) {
-      info.image = out->images[i];
-      REI_VK_CHECK (vkCreateImageView (device->handle, &info, NULL, &out->views[i]));
+    for (u32 i = 0; i < out->image_count; ++i) {
+      info.image = out->images->handles[i];
+      REI_VK_CHECK (vkCreateImageView (device->handle, &info, NULL, &out->images->views[i]));
     }
   }
 
@@ -558,15 +567,16 @@ void rei_vk_create_swapchain (
     .aspect_mask = VK_IMAGE_ASPECT_DEPTH_BIT,
   };
 
-  rei_vk_create_image (device, allocator, &info, &out->depth_image);
+  rei_vk_create_image (device, allocator, &info, &out->images->depth_image);
 }
 
 void rei_vk_destroy_swapchain (const rei_vk_device_t* device, VmaAllocator allocator, rei_vk_swapchain_t* swapchain) {
-  rei_vk_destroy_image (device, allocator, &swapchain->depth_image);
-  for (u32 i = 0; i < swapchain->image_count; ++i) vkDestroyImageView (device->handle, swapchain->views[i], NULL);
+  rei_vk_destroy_image (device, allocator, &swapchain->images->depth_image);
+  for (u32 i = 0; i < swapchain->image_count; ++i) vkDestroyImageView (device->handle, swapchain->images->views[i], NULL);
   vkDestroySwapchainKHR (device->handle, swapchain->handle, NULL);
 
-  free (swapchain->views);
+  free (swapchain->images->views);
+  free (swapchain->images->handles);
   free (swapchain->images);
 }
 
@@ -669,7 +679,7 @@ void rei_vk_create_render_pass (
   out->framebuffers = malloc (sizeof *out->framebuffers * out->framebuffer_count);
 
   for (u32 i = 0; i < swapchain->image_count; ++i) {
-    vk_create_info.pAttachments = (VkImageView[]) {swapchain->views[i], swapchain->depth_image.view};
+    vk_create_info.pAttachments = (VkImageView[]) {swapchain->images->views[i], swapchain->images->depth_image.view};
     REI_VK_CHECK (vkCreateFramebuffer (device->handle, &vk_create_info, NULL, &out->framebuffers[i]));
   }
 }
@@ -1117,7 +1127,7 @@ void rei_vk_create_texture_cmd (
   REI_VK_CREATE_STAGING_BUFFER (allocator, image_size, staging_buffer);
 
   rei_vk_map_buffer (allocator, staging_buffer);
-  LZ4_decompress_safe (src->compressed_data, (char*) staging_buffer->mapped, (s32) src->compressed_size, image_size);
+  LZ4_decompress_safe (src->compressed_data, (char*) staging_buffer->mapped, (s32) src->compressed_size, (s32) image_size);
   rei_vk_unmap_buffer (allocator, staging_buffer);
 
   rei_vk_create_image (

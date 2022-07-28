@@ -153,13 +153,16 @@ typedef struct rei_vk_buffer_t {
 typedef struct rei_vk_swapchain_t {
   VkFormat format;
   u32 image_count;
-  VkImage* images;
-  VkImageView* views;
+
+  struct {
+    VkImage* handles;
+    VkImageView* views;
+    rei_vk_image_t depth_image;
+  }* images;
 
   u32 width, height;
 
   VkSwapchainKHR handle;
-  rei_vk_image_t depth_image;
 } rei_vk_swapchain_t;
 
 typedef struct rei_vk_frame_data_t {

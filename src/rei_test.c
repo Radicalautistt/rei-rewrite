@@ -12,6 +12,142 @@
 #include <xcb/xcb.h>
 #include <VulkanMemoryAllocator/include/vk_mem_alloc.h>
 
+static void _s_create_model_gfx_pipeline (
+  const rei_vk_device_t* vk_device,
+  const rei_vk_render_pass_t* vk_render_pass,
+  const rei_vk_swapchain_t* vk_swapchain,
+  VkPipelineLayout layout,
+  VkPipeline* out) {
+
+  VkVertexInputBindingDescription binding = {
+    .binding = 0,
+    .stride = sizeof (rei_vertex_t),
+    .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
+  };
+
+  VkVertexInputAttributeDescription attributes[3] = {
+    [0] = { // Position
+      .location = 0,
+      .binding = 0,
+      .format = VK_FORMAT_R32G32B32_SFLOAT,
+      .offset = REI_OFFSET_OF (rei_vertex_t, x),
+    },
+
+    [1] = { // Normal
+      .location = 1,
+      .binding = 0,
+      .format = VK_FORMAT_R32G32B32_SFLOAT,
+      .offset = REI_OFFSET_OF (rei_vertex_t, nx),
+    },
+
+    [2] = { // Uv
+      .location = 2,
+      .binding = 0,
+      .format = VK_FORMAT_R32G32_SFLOAT,
+      .offset = REI_OFFSET_OF (rei_vertex_t, u),
+    }
+  };
+
+  VkPipelineVertexInputStateCreateInfo vertex_input_state = {
+    .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+    .pNext = NULL,
+    .flags = 0,
+    .vertexBindingDescriptionCount = 1,
+    .pVertexBindingDescriptions = &binding,
+    .vertexAttributeDescriptionCount = REI_ARRAY_SIZE (attributes),
+    .pVertexAttributeDescriptions = attributes
+  };
+
+  VkRect2D scissor = {
+    .offset = {0, 0},
+    .extent.width = vk_swapchain->width,
+    .extent.height = vk_swapchain->height
+  };
+
+  VkViewport viewport = {
+    .x = 0.f,
+    .y = 0.f,
+    .minDepth = 0.f,
+    .maxDepth = 1.f,
+    .width = (f32) vk_swapchain->width,
+    .height = (f32) vk_swapchain->height
+  };
+
+  VkPipelineViewportStateCreateInfo viewport_state = {
+    .pNext = NULL,
+    .scissorCount = 1,
+    .viewportCount = 1,
+    .pScissors = &scissor,
+    .pViewports = &viewport,
+    .flags = 0,
+    .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO
+  };
+
+  VkPipelineRasterizationStateCreateInfo rasterization_state = {
+    .pNext = NULL,
+    .lineWidth = 1.f,
+    .depthBiasClamp = 0.f,
+    .flags = 0,
+    .depthBiasSlopeFactor = 0.f,
+    .depthBiasEnable = VK_FALSE,
+    .depthClampEnable = VK_FALSE,
+    .depthBiasConstantFactor = 0.f,
+    .cullMode = VK_CULL_MODE_BACK_BIT,
+    .rasterizerDiscardEnable = VK_FALSE,
+    .polygonMode = VK_POLYGON_MODE_FILL,
+    .frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
+    .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO
+  };
+
+  VkPipelineDepthStencilStateCreateInfo depth_stencil_state = {
+    .back = {0},
+    .back.compareOp = VK_COMPARE_OP_ALWAYS,
+    .front = {0},
+    .pNext = NULL,
+    .minDepthBounds = 0.f,
+    .maxDepthBounds = 1.f,
+    .flags = 0,
+    .depthTestEnable = VK_TRUE,
+    .depthWriteEnable = VK_TRUE,
+    .stencilTestEnable = VK_FALSE,
+    .depthBoundsTestEnable = VK_FALSE,
+    .depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL,
+    .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO
+  };
+
+  VkPipelineColorBlendAttachmentState color_blend_attachment = {
+    .colorWriteMask = 0xF,
+    .blendEnable = VK_FALSE,
+    .colorBlendOp = VK_BLEND_OP_ADD,
+    .alphaBlendOp = VK_BLEND_OP_ADD,
+    .srcColorBlendFactor = VK_BLEND_FACTOR_ZERO,
+    .dstColorBlendFactor = VK_BLEND_FACTOR_ZERO,
+    .srcAlphaBlendFactor = VK_BLEND_FACTOR_ZERO,
+    .dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO
+  };
+
+  rei_vk_gfx_pipeline_ci_t create_info = {
+    .cache = VK_NULL_HANDLE,
+    .render_pass = vk_render_pass->handle,
+    .layout = layout,
+
+    .subpass_index = 0,
+    .color_blend_attachment_count = 1,
+
+    .pixel_shader_path = "shaders/model.frag.spv",
+    .vertex_shader_path = "shaders/model.vert.spv",
+
+    .dynamic_state = NULL,
+    .viewport_state = &viewport_state,
+    .vertex_input_state = &vertex_input_state,
+    .depth_stencil_state = &depth_stencil_state,
+    .color_blend_attachments = &color_blend_attachment,
+    .rasterization_state = &rasterization_state
+  };
+
+  rei_vk_create_gfx_pipeline (vk_device, &create_info, out);
+}
+
 int main (void) {
   struct timeval timer_start;
 
@@ -122,135 +258,7 @@ int main (void) {
     &default_pipeline_layout
   );
 
-  {
-    VkVertexInputBindingDescription binding = {
-      .binding = 0,
-      .stride = sizeof (rei_vertex_t),
-      .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
-    };
-
-    VkVertexInputAttributeDescription attributes[3] = {
-      [0] = { // Position
-        .location = 0,
-        .binding = 0,
-        .format = VK_FORMAT_R32G32B32_SFLOAT,
-        .offset = REI_OFFSET_OF (rei_vertex_t, x),
-      },
-
-      [1] = { // Normal
-        .location = 1,
-        .binding = 0,
-        .format = VK_FORMAT_R32G32B32_SFLOAT,
-        .offset = REI_OFFSET_OF (rei_vertex_t, nx),
-      },
-
-      [2] = { // Uv
-        .location = 2,
-        .binding = 0,
-        .format = VK_FORMAT_R32G32_SFLOAT,
-        .offset = REI_OFFSET_OF (rei_vertex_t, u),
-      }
-    };
-
-    VkPipelineVertexInputStateCreateInfo vertex_input_state = {
-      .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
-      .pNext = NULL,
-      .flags = 0,
-      .vertexBindingDescriptionCount = 1,
-      .pVertexBindingDescriptions = &binding,
-      .vertexAttributeDescriptionCount = REI_ARRAY_SIZE (attributes),
-      .pVertexAttributeDescriptions = attributes
-    };
-
-    VkRect2D scissor = {
-      .offset = {0, 0},
-      .extent.width = vk_swapchain.width,
-      .extent.height = vk_swapchain.height
-    };
-
-    VkViewport viewport = {
-      .x = 0.f,
-      .y = 0.f,
-      .minDepth = 0.f,
-      .maxDepth = 1.f,
-      .width = (f32) vk_swapchain.width,
-      .height = (f32) vk_swapchain.height
-    };
-
-    VkPipelineViewportStateCreateInfo viewport_state = {
-      .pNext = NULL,
-      .scissorCount = 1,
-      .viewportCount = 1,
-      .pScissors = &scissor,
-      .pViewports = &viewport,
-      .flags = 0,
-      .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO
-    };
-
-    VkPipelineRasterizationStateCreateInfo rasterization_state = {
-      .pNext = NULL,
-      .lineWidth = 1.f,
-      .depthBiasClamp = 0.f,
-      .flags = 0,
-      .depthBiasSlopeFactor = 0.f,
-      .depthBiasEnable = VK_FALSE,
-      .depthClampEnable = VK_FALSE,
-      .depthBiasConstantFactor = 0.f,
-      .cullMode = VK_CULL_MODE_BACK_BIT,
-      .rasterizerDiscardEnable = VK_FALSE,
-      .polygonMode = VK_POLYGON_MODE_FILL,
-      .frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
-      .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO
-    };
-
-    VkPipelineDepthStencilStateCreateInfo depth_stencil_state = {
-      .back = {0},
-      .back.compareOp = VK_COMPARE_OP_ALWAYS,
-      .front = {0},
-      .pNext = NULL,
-      .minDepthBounds = 0.f,
-      .maxDepthBounds = 1.f,
-      .flags = 0,
-      .depthTestEnable = VK_TRUE,
-      .depthWriteEnable = VK_TRUE,
-      .stencilTestEnable = VK_FALSE,
-      .depthBoundsTestEnable = VK_FALSE,
-      .depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL,
-      .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO
-    };
-
-    VkPipelineColorBlendAttachmentState color_blend_attachment = {
-      .colorWriteMask = 0xF,
-      .blendEnable = VK_FALSE,
-      .colorBlendOp = VK_BLEND_OP_ADD,
-      .alphaBlendOp = VK_BLEND_OP_ADD,
-      .srcColorBlendFactor = VK_BLEND_FACTOR_ZERO,
-      .dstColorBlendFactor = VK_BLEND_FACTOR_ZERO,
-      .srcAlphaBlendFactor = VK_BLEND_FACTOR_ZERO,
-      .dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO
-    };
-
-    rei_vk_gfx_pipeline_ci_t create_info = {
-      .cache = VK_NULL_HANDLE,
-      .render_pass = vk_render_pass.handle,
-      .layout = default_pipeline_layout,
-
-      .subpass_index = 0,
-      .color_blend_attachment_count = 1,
-
-      .pixel_shader_path = "shaders/model.frag.spv",
-      .vertex_shader_path = "shaders/model.vert.spv",
-
-      .dynamic_state = NULL,
-      .viewport_state = &viewport_state,
-      .vertex_input_state = &vertex_input_state,
-      .depth_stencil_state = &depth_stencil_state,
-      .color_blend_attachments = &color_blend_attachment,
-      .rasterization_state = &rasterization_state
-    };
-
-    rei_vk_create_gfx_pipeline (&vk_device, &create_info, &default_pipeline);
-  }
+  _s_create_model_gfx_pipeline (&vk_device, &vk_render_pass, &vk_swapchain, default_pipeline_layout, &default_pipeline);
 
   rei_model_create ("assets/sponza/Sponza.gltf", &vk_device, vk_allocator, &imm_ctxt, default_sampler, default_desc_layout, &test_model);
 
