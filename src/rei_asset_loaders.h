@@ -71,6 +71,7 @@ typedef struct rei_font_symbol_t {
 
 typedef struct rei_font_t {
   u32 symbol_count;
+  u32 __paddding;
   rei_font_symbol_t* symbols;
 } rei_font_t;
 

@@ -39,15 +39,15 @@ rei_result_e rei_texture_compress (const char* const relative_path) {
   const s32 image_size = (s32) (src_image.width * src_image.height * src_image.component_count);
   const s32 compressed_bound = LZ4_compressBound (image_size);
 
-  char* compressed_data = malloc (compressed_bound);
+  char* compressed_data = malloc ((u64) compressed_bound);
   const char* image_data = (const char*) src_image.pixels;
   const s32 compressed_size = LZ4_compress_default (image_data, compressed_data, image_size, compressed_bound);
 
   // Shrink allocated buffer if necessary.
   if (compressed_size < compressed_bound) {
     char* temp = compressed_data;
-    compressed_data = malloc (compressed_size);
-    memcpy (compressed_data, temp, compressed_size);
+    compressed_data = malloc ((u64) compressed_size);
+    memcpy (compressed_data, temp, (u64) compressed_size);
     free (temp);
   }
 
@@ -63,7 +63,7 @@ rei_result_e rei_texture_compress (const char* const relative_path) {
   FILE* out_file = fopen (out_path, "wb");
   fwrite (&json_metadata_size, sizeof (u32), 1, out_file);
   fwrite (json_metadata, 1, json_metadata_size, out_file);
-  fwrite (compressed_data, 1, compressed_size, out_file);
+  fwrite (compressed_data, 1, (u64) compressed_size, out_file);
 
   free (compressed_data);
   fclose (out_file);

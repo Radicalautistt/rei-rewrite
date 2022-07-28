@@ -122,20 +122,20 @@ void rei_model_create (
 
     _s_sort_gltf_primitives (sorted_primitives, 0, (u32) primitive_count - 1);
 
-    u32 vertex_count = 0;
-    u32 index_count = 0;
+    u32 vtx_count = 0;
+    u32 idx_count = 0;
 
     // Count overall number of vertices and indices.
     for (u64 i = 0; i < primitive_count; ++i) {
       const rei_gltf_primitive_t* current = &sorted_primitives[i];
 
-      vertex_count += gltf.accessors[current->position_index].count;
-      index_count += gltf.accessors[current->indices_index].count;
+      vtx_count += gltf.accessors[current->position_index].count;
+      idx_count += gltf.accessors[current->indices_index].count;
     }
 
-    const u64 vtx_buffer_size = sizeof (rei_vertex_t) * vertex_count;
+    const u64 vtx_buffer_size = sizeof (rei_vertex_t) * vtx_count;
     // FIXME I don't get why do I have to use u32 as the index type when indices in the model are definitely u16...
-    const u64 idx_buffer_size = sizeof (u32) * index_count;
+    const u64 idx_buffer_size = sizeof (u32) * idx_count;
 
     rei_vk_buffer_t staging_buffer;
     REI_VK_CREATE_STAGING_BUFFER (vk_allocator, vtx_buffer_size + idx_buffer_size, &staging_buffer);
@@ -145,14 +145,11 @@ void rei_model_create (
     rei_vertex_t* vertices = (rei_vertex_t*) staging_buffer.mapped;
     u32* indices = (u32*) (staging_buffer.mapped + vtx_buffer_size);
 
-    u32 vertex_offset = 0;
-    u32 index_offset = 0;
+    u32 vtx_offset = 0;
+    u32 idx_offset = 0;
 
     const u64 vec2_size = sizeof (f32) * 2;
     const u64 vec3_size = sizeof (f32) * 3;
-
-    u32 current_material = 0;
-    u32 batch_count = 1;
 
     out->batch_count = gltf.material_count;
     out->batches = malloc (sizeof *out->batches);
@@ -171,7 +168,7 @@ void rei_model_create (
     for (u64 i = 0; i < primitive_count; ++i) {
       const rei_gltf_primitive_t* current_primitive = &sorted_primitives[i];
 
-      const u32 vertex_start = vertex_offset;
+      const u32 vtx_start = vtx_offset;
 
       const f32* position = (const f32*) _s_get_gltf_accessor_data (&gltf, current_primitive->position_index);
       const f32* normal = (const f32*) _s_get_gltf_accessor_data (&gltf, current_primitive->normal_index);
@@ -180,7 +177,7 @@ void rei_model_create (
       const u32 current_vertex_count = gltf.accessors[current_primitive->position_index].count;
 
       for (u32 j = 0; j < current_vertex_count; ++j) {
-        rei_vertex_t* new_vertex = &vertices[vertex_offset++];
+        rei_vertex_t* new_vertex = &vertices[vtx_offset++];
 
         memcpy (&new_vertex->x, &position[j * 3], vec3_size);
         memcpy (&new_vertex->nx, &normal[j * 3], vec3_size);
@@ -199,13 +196,13 @@ void rei_model_create (
 
 	++batch_offset;
 
-	current_batch.first_index = index_offset;
+	current_batch.first_index = idx_offset;
 	current_batch.idx_count = current_index_count;
 	current_batch.material_index = current_primitive->material_index;
       }
 
       for (u32 k = 0; k < current_index_count; ++k) {
-        indices[index_offset++] = index_data[k] + vertex_start;
+        indices[idx_offset++] = index_data[k] + vtx_start;
       }
     }
 

@@ -37,7 +37,7 @@ u32 rei_murmur_hash (const u8* key, u64 length, u32 seed) {
   k *= c2;
 
   hash ^= k;
-  hash ^= length;
+  hash ^= (u32) length;
 
   hash ^= hash >> 16;
   hash *= 0x85ebca6b;

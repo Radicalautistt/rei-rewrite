@@ -182,21 +182,33 @@ void rei_load_font (const char* const relative_path, rei_font_t* out) {
 
         case YXML_ATTREND:
 	  if (!strcmp (xml_state->attr, "id")) {
-            rei_parse_u8 (attr_value, &current_symb->id);
+            u32 result;
+            rei_parse_u32 (attr_value, &result);
+	    current_symb->id = (u8) result;
 	  } else if (!strcmp (xml_state->attr, "x")) {
-            rei_parse_u8 (attr_value, &current_symb->x);
+            u32 result;
+            rei_parse_u32 (attr_value, &result);
+            current_symb->x = (u8) result;
 	  } else if (!strcmp (xml_state->attr, "y")) {
-            rei_parse_u8 (attr_value, &current_symb->y);
+            u32 result;
+            rei_parse_u32 (attr_value, &result);
+            current_symb->y = (u8) result;
 	  } else if (!strcmp (xml_state->attr, "width")) {
-            rei_parse_u8 (attr_value, &current_symb->width);
+            u32 result;
+            rei_parse_u32 (attr_value, &result);
+            current_symb->width = (u8) result;
 	  } else if (!strcmp (xml_state->attr, "height")) {
-            rei_parse_u8 (attr_value, &current_symb->height);
+            u32 result;
+            rei_parse_u32 (attr_value, &result);
+            current_symb->height = (u8) result;
 	  } else if (!strcmp (xml_state->attr, "xoffset")) {
-	    current_symb->xoffset = atoi (attr_value);
+	    current_symb->xoffset = (s8) atoi (attr_value);
 	  } else if (!strcmp (xml_state->attr, "yoffset")) {
-	    current_symb->yoffset = atoi (attr_value);
+	    current_symb->yoffset = (s8) atoi (attr_value);
 	  } else if (!strcmp (xml_state->attr, "xadvance")) {
-            rei_parse_u8 (attr_value, &current_symb->xadvance);
+            u32 result;
+            rei_parse_u32 (attr_value, &result);
+            current_symb->xadvance = (u8) result;
 	  }
 
 	  attr_value_offset = 0;
@@ -260,7 +272,7 @@ static void _s_gltf_parse_buffers (const char* const gltf_path, rei_json_state_t
 	char* slash_pos = strrchr (gltf_path, '/');
 
 	if (slash_pos++) {
-	  strncpy (buffer_path, gltf_path, slash_pos - gltf_path);
+	  strncpy (buffer_path, gltf_path, (u64) (slash_pos - gltf_path));
           strncpy (buffer_path + strlen (buffer_path), uri.src, uri.size);
 	}
 
@@ -269,16 +281,6 @@ static void _s_gltf_parse_buffers (const char* const gltf_path, rei_json_state_t
       }
     }
   }
-}
-
-static void _s_gltf_init_array (rei_json_state_t* state, u32* out_count, u32 data_size, void** out_data) {
-  ++state->current_token;
-  REI_ASSERT (state->current_token->type == JSMN_ARRAY);
-
-  *out_count = (u32) state->current_token->size;
-  *out_data = malloc (data_size * *out_count);
-
-  ++state->current_token;
 }
 
 static void _s_gltf_parse_buffer_views (rei_json_state_t* state, rei_gltf_t* out) {

@@ -6,13 +6,14 @@
 #define JSMN_STATIC
 #include <jsmn/jsmn.h>
 
+#define REI_IS_DIGIT(__symbol) (__symbol >= '0' && __symbol <= '9')
+
 typedef struct rei_json_state_t {
   const char* json;
   jsmntok_t* json_tokens;
   const jsmntok_t* current_token;
 } rei_json_state_t;
 
-void rei_parse_u8 (const char* src, u8* out);
 void rei_parse_u32 (const char* src, u32* out);
 void rei_parse_u64 (const char* src, u64* out);
 

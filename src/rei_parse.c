@@ -4,28 +4,17 @@
 #include "rei_debug.h"
 #include "rei_defines.h"
 
-static REI_FORCE_INLINE b8 _s_is_digit (char symbol) {
-  return symbol >= '0' && symbol <= '9';
-}
-
-void rei_parse_u8 (const char* src, u8* out) {
-  *out = 0;
-
-  for (; *src && _s_is_digit (*src); ++src)
-    *out = *out * 10 + (u8) (*src - '0');
-}
-
 void rei_parse_u32 (const char* src, u32* out) {
   *out = 0;
 
-  for (; *src && _s_is_digit (*src); ++src)
+  for (; *src && REI_IS_DIGIT (*src); ++src)
     *out = *out * 10 + (u32) (*src - '0');
 }
 
 void rei_parse_u64 (const char* src, u64* out) {
   *out = 0;
 
-  for (; *src && _s_is_digit (*src); ++src)
+  for (; *src && REI_IS_DIGIT (*src); ++src)
     *out = *out * 10 + (u64) (*src - '0');
 }
 

@@ -333,14 +333,6 @@ void rei_vk_create_texture_raw (
   rei_vk_image_t* out
 );
 
-void rei_vk_create_texture_mipmapped (
-  const rei_vk_device_t* device,
-  VmaAllocator allocator,
-  const rei_vk_imm_ctxt_t* context,
-  const rei_image_t* src,
-  rei_vk_image_t* out
-);
-
 void rei_vk_create_descriptor_layout (
   const rei_vk_device_t* device,
   u32 bind_count,

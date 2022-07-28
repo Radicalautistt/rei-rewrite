@@ -1,4 +1,3 @@
-#include <math.h>
 #include <alloca.h>
 #include <string.h>
 #include <malloc.h>
@@ -10,6 +9,8 @@
 
 #include <lz4/lib/lz4.h>
 #include <VulkanMemoryAllocator/include/vk_mem_alloc.h>
+
+REI_IGNORE_WARN_START (-Wunused-function)
 
 static VKAPI_ATTR VkBool32 VKAPI_CALL _s_vk_debug_callback (
   VkDebugUtilsMessageSeverityFlagBitsEXT severity,
@@ -28,6 +29,8 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL _s_vk_debug_callback (
 
   return VK_FALSE;
 }
+
+REI_IGNORE_WARN_STOP
 
 static void _s_set_swapchain_surface_format (VkPhysicalDevice physical_device, VkSurfaceKHR surface, VkSurfaceFormatKHR* out) {
   u32 available_count = 0;
@@ -1252,6 +1255,7 @@ void rei_vk_create_texture_raw (
   rei_vk_destroy_buffer (allocator, &staging_buffer);
 }
 
+#if 0
 void rei_vk_create_texture_mipmapped (
   const rei_vk_device_t* device,
   VmaAllocator allocator,
@@ -1422,6 +1426,7 @@ void rei_vk_create_texture_mipmapped (
   rei_vk_end_imm_cmd (device, context, cmd_buffer);
   rei_vk_destroy_buffer (allocator, &staging);
 }
+#endif
 
 void rei_vk_create_descriptor_layout (
   const rei_vk_device_t* device,

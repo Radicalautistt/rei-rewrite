@@ -9,6 +9,8 @@
 
 #include "rei_file.h"
 
+REI_IGNORE_WARN_START (-Wconversion)
+
 rei_result_e rei_map_file (const char* const relative_path, rei_file_t* out) {
   out->desc = (s64) open (relative_path, O_RDONLY);
 
@@ -27,3 +29,5 @@ void rei_unmap_file (rei_file_t* file) {
   munmap (file->data, file->size);
   close (file->desc);
 }
+
+REI_IGNORE_WARN_STOP
