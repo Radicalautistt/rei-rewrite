@@ -63,6 +63,17 @@
   );                                                                            \
 } while (0)
 
+#define REI_VK_CREATE_GPU_BUFFER(__allocator, __size, __usage, __out) do { \
+  rei_vk_create_buffer (                                                   \
+    __allocator,                                                           \
+    __size,                                                                \
+    __usage | VK_BUFFER_USAGE_TRANSFER_DST_BIT,                            \
+    VMA_MEMORY_USAGE_GPU_ONLY,                                             \
+    VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,                                   \
+    __out                                                                  \
+  );                                                                       \
+} while (0)
+
 #define REI_FD_VULKAN_TYPE(__name) typedef struct __name##_T* __name
 
 // Forward declare Vulkan types.

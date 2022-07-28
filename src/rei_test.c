@@ -252,7 +252,7 @@ int main (void) {
     rei_vk_create_gfx_pipeline (&vk_device, &create_info, &default_pipeline);
   }
 
-  rei_create_model ("assets/sponza/Sponza.gltf", &vk_device, vk_allocator, &imm_ctxt, default_sampler, default_desc_layout, &test_model);
+  rei_model_create ("assets/sponza/Sponza.gltf", &vk_device, vk_allocator, &imm_ctxt, default_sampler, default_desc_layout, &test_model);
 
   rei_camera_create (0.f, 1.f, 0.f, -90.f, 0.f, &camera);
 
@@ -299,7 +299,7 @@ int main (void) {
     rei_camera_get_view_projection (&camera, &camera_position, camera_projection, &view_projection);
 
     vkCmdBindPipeline (vk_cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, default_pipeline);
-    rei_draw_model_cmd (&test_model, vk_cmd_buffer, default_pipeline_layout, &view_projection);
+    rei_model_draw_cmd (&test_model, vk_cmd_buffer, default_pipeline_layout, &view_projection);
 
     rei_imgui_new_frame (imgui_io);
     rei_imgui_debug_window_wid (imgui_io);
@@ -325,7 +325,7 @@ RESOURCE_CLEANUP_L:
   rei_imgui_destroy_frame_data (&vk_device, vk_allocator, &imgui_frame_data);
   rei_destroy_imgui_ctxt (&vk_device, vk_allocator, &imgui_ctxt);
 
-  rei_destroy_model (&vk_device, vk_allocator, &test_model);
+  rei_model_destroy (&vk_device, vk_allocator, &test_model);
   vkDestroyPipeline (vk_device.handle, default_pipeline, NULL);
   vkDestroyPipelineLayout (vk_device.handle, default_pipeline_layout, NULL);
   vkDestroyDescriptorPool (vk_device.handle, main_desc_pool, NULL);

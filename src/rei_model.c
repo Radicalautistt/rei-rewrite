@@ -90,7 +90,7 @@ static void _s_load_textures (
   free (staging_buffers);
 }
 
-void rei_create_model (
+void rei_model_create (
   const char* relative_path,
   const rei_vk_device_t* vk_device,
   VmaAllocator vk_allocator,
@@ -133,24 +133,17 @@ void rei_create_model (
       index_count += gltf.accessors[current->indices_index].count;
     }
 
-    const u64 vertex_buffer_size = sizeof (rei_vertex_t) * vertex_count;
+    const u64 vtx_buffer_size = sizeof (rei_vertex_t) * vertex_count;
     // FIXME I don't get why do I have to use u32 as the index type when indices in the model are definitely u16...
-    const u64 index_buffer_size = sizeof (u32) * index_count;
+    const u64 idx_buffer_size = sizeof (u32) * index_count;
 
     rei_vk_buffer_t staging_buffer;
-    rei_vk_create_buffer (
-      vk_allocator,
-      vertex_buffer_size + index_buffer_size,
-      VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-      VMA_MEMORY_USAGE_CPU_ONLY,
-      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-      &staging_buffer
-    );
+    REI_VK_CREATE_STAGING_BUFFER (vk_allocator, vtx_buffer_size + idx_buffer_size, &staging_buffer);
 
     rei_vk_map_buffer (vk_allocator, &staging_buffer);
 
     rei_vertex_t* vertices = (rei_vertex_t*) staging_buffer.mapped;
-    u32* indices = (u32*) (staging_buffer.mapped + vertex_buffer_size);
+    u32* indices = (u32*) (staging_buffer.mapped + vtx_buffer_size);
 
     u32 vertex_offset = 0;
     u32 index_offset = 0;
@@ -158,11 +151,22 @@ void rei_create_model (
     const u64 vec2_size = sizeof (f32) * 2;
     const u64 vec3_size = sizeof (f32) * 3;
 
+    u32 current_material = 0;
+    u32 batch_count = 1;
+
     out->batch_count = gltf.material_count;
-    out->batches = malloc (sizeof *out->batches * out->batch_count);
+    out->batches = malloc (sizeof *out->batches);
+    out->batches->first_indices = malloc (sizeof *out->batches->first_indices * out->batch_count);
+    out->batches->idx_counts = malloc (sizeof *out->batches->idx_counts * out->batch_count);
+    out->batches->material_indices = malloc (sizeof *out->batches->material_indices * out->batch_count);
 
     u32 batch_offset = 0;
-    rei_batch_t current_batch = {0};
+
+    struct {
+      u32 first_index;
+      u32 idx_count;
+      u32 material_index;
+    } current_batch = {0};
 
     for (u64 i = 0; i < primitive_count; ++i) {
       const rei_gltf_primitive_t* current_primitive = &sorted_primitives[i];
@@ -187,12 +191,16 @@ void rei_create_model (
       const u16* index_data = (const u16*) _s_get_gltf_accessor_data (&gltf, current_primitive->indices_index);
 
       if (current_batch.material_index == current_primitive->material_index) {
-        current_batch.index_count += current_index_count;
+        current_batch.idx_count += current_index_count;
       } else {
-	memcpy (&out->batches[batch_offset++], &current_batch, sizeof (rei_batch_t));
+        out->batches->first_indices[batch_offset] = current_batch.first_index;
+	out->batches->idx_counts[batch_offset] = current_batch.idx_count;
+	out->batches->material_indices[batch_offset] = current_batch.material_index;
+
+	++batch_offset;
 
 	current_batch.first_index = index_offset;
-	current_batch.index_count = current_index_count;
+	current_batch.idx_count = current_index_count;
 	current_batch.material_index = current_primitive->material_index;
       }
 
@@ -201,34 +209,23 @@ void rei_create_model (
       }
     }
 
-    memcpy (&out->batches[batch_offset], &current_batch, sizeof (rei_batch_t));
+    out->batches->first_indices[batch_offset] = current_batch.first_index;
+    out->batches->idx_counts[batch_offset] = current_batch.idx_count;
+    out->batches->material_indices[batch_offset] = current_batch.material_index;
 
     rei_vk_unmap_buffer (vk_allocator, &staging_buffer);
     free (sorted_primitives);
 
-    rei_vk_create_buffer (
-      vk_allocator,
-      vertex_buffer_size,
-      VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-      VMA_MEMORY_USAGE_GPU_ONLY,
-      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-      &out->vertex_buffer
-    );
+    out->buffers = malloc (sizeof *out->buffers);
 
-    rei_vk_create_buffer (
-      vk_allocator,
-      index_buffer_size,
-      VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-      VMA_MEMORY_USAGE_GPU_ONLY,
-      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-      &out->index_buffer
-    );
+    REI_VK_CREATE_GPU_BUFFER (vk_allocator, vtx_buffer_size, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, &out->buffers->vtx);
+    REI_VK_CREATE_GPU_BUFFER (vk_allocator, idx_buffer_size, VK_BUFFER_USAGE_INDEX_BUFFER_BIT, &out->buffers->idx);
 
     VkCommandBuffer cmd_buffer;
     rei_vk_start_imm_cmd (vk_device, vk_imm_ctxt, &cmd_buffer);
 
-    rei_vk_copy_buffer_cmd (cmd_buffer, vertex_buffer_size, 0, &staging_buffer, &out->vertex_buffer);
-    rei_vk_copy_buffer_cmd (cmd_buffer, index_buffer_size, vertex_buffer_size, &staging_buffer, &out->index_buffer);
+    rei_vk_copy_buffer_cmd (cmd_buffer, vtx_buffer_size, 0, &staging_buffer, &out->buffers->vtx);
+    rei_vk_copy_buffer_cmd (cmd_buffer, idx_buffer_size, vtx_buffer_size, &staging_buffer, &out->buffers->idx);
 
     rei_vk_end_imm_cmd (vk_device, vk_imm_ctxt, cmd_buffer);
     rei_vk_destroy_buffer (vk_allocator, &staging_buffer);
@@ -237,12 +234,15 @@ void rei_create_model (
   { // Create model matrix.
     const rei_gltf_node_t* default_node = &gltf.nodes[0];
 
-    rei_vec3_u scale_vector;
-    scale_vector.x = default_node->scale_vector[0];
-    scale_vector.y = default_node->scale_vector[1];
-    scale_vector.z = default_node->scale_vector[2];
-    rei_mat4_create_default (&out->model_matrix);
-    rei_mat4_scale (&out->model_matrix, &scale_vector);
+    rei_vec3_u scale_vector = {
+      .x = default_node->scale_vector[0],
+      .y = default_node->scale_vector[1],
+      .z = default_node->scale_vector[2]
+    };
+
+    out->model_matrix = malloc (sizeof *out->model_matrix);
+    rei_mat4_create_default (out->model_matrix);
+    rei_mat4_scale (out->model_matrix, &scale_vector);
   }
 
   _s_load_textures (relative_path, &gltf, vk_device, vk_allocator, vk_imm_ctxt, out);
@@ -270,28 +270,31 @@ void rei_create_model (
   rei_gltf_destroy (&gltf);
 }
 
-void rei_draw_model_cmd (
+void rei_model_draw_cmd (
   const rei_model_t* model,
   VkCommandBuffer vk_cmd_buffer,
   VkPipelineLayout vk_pipeline_layout,
   const rei_mat4_t* view_projection) {
 
-  vkCmdBindVertexBuffers (vk_cmd_buffer, 0, 1, &model->vertex_buffer.handle, (const u64[]) {0});
-  vkCmdBindIndexBuffer (vk_cmd_buffer, model->index_buffer.handle, 0, VK_INDEX_TYPE_UINT32);
+  vkCmdBindVertexBuffers (vk_cmd_buffer, 0, 1, &model->buffers->vtx.handle, (const u64[]) {0});
+  vkCmdBindIndexBuffer (vk_cmd_buffer, model->buffers->idx.handle, 0, VK_INDEX_TYPE_UINT32);
 
   rei_mat4_t mvp;
-  rei_mat4_mul (view_projection, &model->model_matrix, &mvp);
+  rei_mat4_mul (view_projection, model->model_matrix, &mvp);
   vkCmdPushConstants (vk_cmd_buffer, vk_pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof (rei_mat4_t), &mvp);
 
   for (u32 i = 0; i < model->batch_count; ++i) {
-    const rei_batch_t* current_batch = &model->batches[i];
-
-    REI_VK_BIND_DESCRIPTORS (vk_cmd_buffer, vk_pipeline_layout, 1, &model->descriptors[current_batch->material_index]);
-    vkCmdDrawIndexed (vk_cmd_buffer, current_batch->index_count, 1, current_batch->first_index, 0, 0);
+    REI_VK_BIND_DESCRIPTORS (vk_cmd_buffer, vk_pipeline_layout, 1, &model->descriptors[model->batches->material_indices[i]]);
+    vkCmdDrawIndexed (vk_cmd_buffer, model->batches->idx_counts[i], 1, model->batches->first_indices[i], 0, 0);
   }
 }
 
-void rei_destroy_model (const rei_vk_device_t* vk_device, VmaAllocator vk_allocator, rei_model_t* model) {
+void rei_model_destroy (const rei_vk_device_t* vk_device, VmaAllocator vk_allocator, rei_model_t* model) {
+  free (model->model_matrix);
+
+  free (model->batches->first_indices);
+  free (model->batches->idx_counts);
+  free (model->batches->material_indices);
   free (model->batches);
 
   vkDestroyDescriptorPool (vk_device->handle, model->descriptor_pool, NULL);
@@ -300,6 +303,8 @@ void rei_destroy_model (const rei_vk_device_t* vk_device, VmaAllocator vk_alloca
   for (u32 i = 0; i < model->texture_count; ++i) rei_vk_destroy_image (vk_device, vk_allocator, &model->textures[i]);
   free (model->textures);
 
-  rei_vk_destroy_buffer (vk_allocator, &model->index_buffer);
-  rei_vk_destroy_buffer (vk_allocator, &model->vertex_buffer);
+  rei_vk_destroy_buffer (vk_allocator, &model->buffers->idx);
+  rei_vk_destroy_buffer (vk_allocator, &model->buffers->vtx);
+
+  free (model->buffers);
 }

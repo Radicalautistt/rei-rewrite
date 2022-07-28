@@ -3,28 +3,26 @@
 
 #include "rei_vk.h"
 
-typedef struct rei_batch_t {
-  u32 first_index;
-  u32 index_count;
-  u32 material_index;
-} rei_batch_t;
-
 typedef struct rei_model_t {
-  rei_vk_buffer_t vertex_buffer;
-  rei_vk_buffer_t index_buffer;
+  struct {rei_vk_buffer_t vtx, idx;}* buffers;
 
   u32 texture_count;
   u32 batch_count;
 
-  rei_batch_t* batches;
+  struct {
+    u32* first_indices;
+    u32* idx_counts;
+    u32* material_indices;
+  }* batches;
 
   rei_vk_image_t* textures;
   VkDescriptorPool descriptor_pool;
   VkDescriptorSet* descriptors;
-  rei_mat4_t model_matrix;
+  // TODO Create a global array of matrices which will be processed before rei_model_draw_cmd.
+  rei_mat4_t* model_matrix;
 } rei_model_t;
 
-void rei_create_model (
+void rei_model_create (
   const char* relative_path,
   const rei_vk_device_t* vk_device,
   VmaAllocator vk_allocator,
@@ -34,13 +32,13 @@ void rei_create_model (
   rei_model_t* out
 );
 
-void rei_draw_model_cmd (
+void rei_model_draw_cmd (
   const rei_model_t* model,
   VkCommandBuffer vk_cmd_buffer,
   VkPipelineLayout vk_pipeline_layout,
   const rei_mat4_t* view_projection
 );
 
-void rei_destroy_model (const rei_vk_device_t* vk_device, VmaAllocator vk_allocator, rei_model_t* model);
+void rei_model_destroy (const rei_vk_device_t* vk_device, VmaAllocator vk_allocator, rei_model_t* model);
 
 #endif /* REI_MODEL_H */
