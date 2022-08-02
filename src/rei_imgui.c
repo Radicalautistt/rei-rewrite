@@ -25,8 +25,6 @@ void rei_create_imgui_ctxt (
     ImFontAtlas_SetTexID (io->Fonts, (void*) ((u64) out->font_texture.handle));
   }
 
-  rei_vk_create_sampler (vk_device, 0.f, 1.f, VK_FILTER_LINEAR, &out->font_sampler);
-
   // Set IMGUI theme.
   ImGuiStyle* style = igGetStyle ();
   igStyleColorsClassic (style);
@@ -49,7 +47,6 @@ void rei_create_imgui_ctxt (
 }
 
 void rei_destroy_imgui_ctxt (const rei_vk_device_t* vk_device, VmaAllocator vk_allocator, rei_imgui_ctxt_t* ctxt) {
-  vkDestroySampler (vk_device->handle, ctxt->font_sampler, NULL);
   rei_vk_destroy_image (vk_device, vk_allocator, &ctxt->font_texture);
 
   igDestroyContext (ctxt->handle);
@@ -61,6 +58,7 @@ void rei_imgui_create_frame_data (
   const rei_vk_render_pass_t* vk_render_pass,
   VkDescriptorPool vk_desc_pool,
   VkDescriptorSetLayout vk_desc_layout,
+  VkSampler vk_text_sampler,
   const rei_imgui_ctxt_t* imgui_ctxt,
   rei_imgui_frame_data_t* out) {
 
@@ -77,7 +75,7 @@ void rei_imgui_create_frame_data (
 
   // Allocate descriptors.
   rei_vk_allocate_descriptors (vk_device, vk_desc_pool, vk_desc_layout, 1, &out->font_descriptor);
-  rei_vk_write_image_descriptors (vk_device, imgui_ctxt->font_sampler, &imgui_ctxt->font_texture.view, 1, &out->font_descriptor);
+  rei_vk_write_image_descriptors (vk_device, vk_text_sampler, &imgui_ctxt->font_texture.view, 1, &out->font_descriptor);
 
   // Create graphics pipeline.
   rei_vk_create_pipeline_layout (

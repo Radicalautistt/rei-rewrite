@@ -7,6 +7,7 @@
 
 #warning "TODO handle SIMD instruction sets availability."
 
+#define REI_FLOOR(__value) ((f32) ((s32) __value))
 #define REI_RADIANS(__degrees) (__degrees * 0.01745329251994329576923690768489f)
 
 // Set of functions that operate on/return a 128 bit simd register.
@@ -188,7 +189,7 @@ static inline void rei_look_at (const rei_vec3_u* eye, const rei_vec3_u* center,
 }
 
 static inline void rei_perspective (f32 fov, f32 aspect, f32 z_near, f32 z_far, rei_mat4_t* out) {
-  f32 z_length = z_far- z_near;
+  f32 z_length = z_far - z_near;
   f32 focal_length = 1.f / tanf (fov / 2.f);
 
   out->rows[0].x = focal_length/ aspect;

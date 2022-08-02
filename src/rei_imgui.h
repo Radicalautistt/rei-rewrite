@@ -28,7 +28,6 @@ typedef struct rei_imgui_frame_data_t {
 } rei_imgui_frame_data_t;
 
 typedef struct {
-  VkSampler font_sampler;
   rei_vk_image_t font_texture;
 
   ImGuiContext* handle;
@@ -49,6 +48,7 @@ void rei_imgui_create_frame_data (
   const rei_vk_render_pass_t* vk_render_pass,
   VkDescriptorPool vk_desc_pool,
   VkDescriptorSetLayout vk_desc_layout,
+  VkSampler vk_text_sampler,
   const rei_imgui_ctxt_t* imgui_ctxt,
   rei_imgui_frame_data_t* out
 );

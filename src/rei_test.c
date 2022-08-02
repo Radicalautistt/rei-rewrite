@@ -170,7 +170,9 @@ int main (void) {
   VkDescriptorPool main_desc_pool;
   VkPipelineLayout default_pipeline_layout;
   VkDescriptorSetLayout default_desc_layout;
+  // FIXME remove default sampler ASAP
   VkSampler default_sampler;
+  VkSampler vk_text_sampler;
 
   rei_model_t test_model;
   rei_camera_t camera;
@@ -225,6 +227,14 @@ int main (void) {
 
   // FIXME max_lod is hardcoded.
   rei_vk_create_sampler (&vk_device, 0.f, 0.f, VK_FILTER_NEAREST, &default_sampler);
+  rei_vk_create_sampler (&vk_device, 0.f, 0.f, VK_FILTER_NEAREST, &vk_text_sampler);
+
+#if 0
+  rei_font_t test_font;
+  rei_load_font ("assets/fonts/baemuk-headline/metadata.fnt", &test_font);
+
+  rei_destroy_font (&test_font);
+#endif
 
   rei_vk_create_descriptor_layout (
     &vk_device,
@@ -268,7 +278,16 @@ int main (void) {
   camera_projection = rei_camera_create_projection ((f32) (vk_swapchain.width / vk_swapchain.height));
 
   rei_create_imgui_ctxt (&vk_device, vk_allocator, &imm_ctxt, &imgui_ctxt);
-  rei_imgui_create_frame_data (&vk_device, vk_allocator, &vk_render_pass, main_desc_pool, default_desc_layout, &imgui_ctxt, &imgui_frame_data);
+  rei_imgui_create_frame_data (
+    &vk_device,
+    vk_allocator,
+    &vk_render_pass,
+    main_desc_pool,
+    default_desc_layout,
+    vk_text_sampler,
+    &imgui_ctxt,
+    &imgui_frame_data
+  );
 
 #if 0
   rei_create_openal_ctxt (&openal_ctxt);
@@ -341,6 +360,7 @@ RESOURCE_CLEANUP_L:
   rei_vk_destroy_imm_ctxt (&vk_device, &imm_ctxt);
   vkDestroyDescriptorSetLayout (vk_device.handle, default_desc_layout, NULL);
   vkDestroySampler (vk_device.handle, default_sampler, NULL);
+  vkDestroySampler (vk_device.handle, vk_text_sampler, NULL);
 
   for (u32 i = 0; i < REI_VK_FRAME_COUNT; ++i) rei_vk_destroy_frame_data (&vk_device, &vk_frames[i]);
   free (vk_frames);
