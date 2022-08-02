@@ -71,7 +71,8 @@ typedef struct rei_font_symbol_t {
 
 typedef struct rei_font_t {
   u32 symbol_count;
-  u32 __paddding;
+  u32 size;
+  char* atlas_path;
   rei_font_symbol_t* symbols;
 } rei_font_t;
 
@@ -180,6 +181,7 @@ void rei_load_png (const char* relative_path, rei_image_t* out);
 void rei_load_jpeg (const char* relative_path, rei_image_t* out);
 
 void rei_load_font (const char* const relative_path, rei_font_t* out);
+void rei_destroy_font (rei_font_t* font);
 
 rei_result_e rei_gltf_load (const char* relative_path, rei_gltf_t* out);
 void rei_gltf_destroy (rei_gltf_t* gltf);

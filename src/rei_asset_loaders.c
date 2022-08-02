@@ -146,6 +146,43 @@ void rei_load_font (const char* const relative_path, rei_font_t* out) {
       exit (EXIT_FAILURE);
     }
 
+    if (!strcmp (xml_state->elem, "info")) {
+      switch (result) {
+        case YXML_ATTRSTART: break;
+        case YXML_ATTRVAL: attr_value[attr_value_offset++] = *xml_state->data; break;
+        case YXML_ATTREND:
+          if (!strcmp (xml_state->attr, "size")) rei_parse_u32 (attr_value, &out->size);
+
+	  attr_value_offset = 0;
+	  memset (attr_value, 0, 32);
+	  break;
+
+        default: break;
+      }
+    }
+
+    if (!strcmp (xml_state->elem, "page")) {
+      switch (result) {
+        case YXML_ATTRSTART: break;
+        case YXML_ATTRVAL: attr_value[attr_value_offset++] = *xml_state->data; break;
+        case YXML_ATTREND:
+          if (!strcmp (xml_state->attr, "file")) {
+	    out->atlas_path = malloc (strlen (relative_path) + strlen (attr_value) + 1);
+	    const char* slash1 = strrchr (relative_path, '/');
+	    strncpy (out->atlas_path, relative_path, (slash1 + 1) - relative_path);
+
+	    char* slash2 = strrchr (out->atlas_path, '/');
+	    strcpy (slash2 + 1, attr_value);
+          }
+
+	  attr_value_offset = 0;
+	  memset (attr_value, 0, 32);
+	  break;
+
+        default: break;
+      }
+    }
+
     if (!strcmp (xml_state->elem, "chars")) {
       switch (result) {
         case YXML_ATTRSTART:
@@ -225,6 +262,11 @@ void rei_load_font (const char* const relative_path, rei_font_t* out) {
   free (xml_state);
 
   rei_unmap_file (&xml_file);
+}
+
+void rei_destroy_font (rei_font_t* font) {
+  free (font->atlas_path);
+  free (font->symbols);
 }
 
 static void _s_gltf_parse_nodes (rei_json_state_t* state, rei_gltf_t* out) {
