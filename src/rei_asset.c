@@ -115,13 +115,13 @@ rei_result_e rei_texture_load (const char* const relative_path, rei_texture_t* o
     REI_ASSERT (root_token->type == JSMN_OBJECT);
 
     for (s32 i = 0; i < root_token->size; ++i) {
-      if (rei_json_string_eq (&json_state, "width", json_state.current_token)) {
+      if (rei_json_string_eq (&json_state, "width")) {
         rei_json_parse_u32 (&json_state, &out->width);
-      } else if (rei_json_string_eq (&json_state, "height", json_state.current_token)) {
+      } else if (rei_json_string_eq (&json_state, "height")) {
         rei_json_parse_u32 (&json_state, &out->height);
-      } else if (rei_json_string_eq (&json_state, "component_count", json_state.current_token)) {
+      } else if (rei_json_string_eq (&json_state, "component_count")) {
         rei_json_parse_u32 (&json_state, &out->component_count);
-      } else if (rei_json_string_eq (&json_state, "compressed_size", json_state.current_token)) {
+      } else if (rei_json_string_eq (&json_state, "compressed_size")) {
         rei_json_parse_u32 (&json_state, &out->compressed_size);
       }
     }

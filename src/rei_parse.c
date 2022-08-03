@@ -93,6 +93,7 @@ void rei_json_parse_string (rei_json_state_t* state, rei_string_view_t* out) {
   ++state->current_token;
 }
 
-b8 rei_json_string_eq (const rei_json_state_t* state, const char* a, const jsmntok_t* b) {
-  return !strncmp (state->json + b->start, a, strlen (a));
+b8 rei_json_string_eq (const rei_json_state_t* state, const char* a) {
+  REI_ASSERT (state->current_token->type == JSMN_STRING);
+  return !strncmp (state->json + state->current_token->start, a, strlen (a));
 }

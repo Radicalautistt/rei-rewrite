@@ -282,9 +282,9 @@ static void _s_gltf_parse_nodes (rei_json_state_t* state, rei_gltf_t* out) {
     const jsmntok_t* current_node = state->current_token++;
 
     for (s32 j = 0; j < current_node->size; ++j) {
-      if (rei_json_string_eq (state, "mesh", state->current_token)) {
+      if (rei_json_string_eq (state, "mesh")) {
         rei_json_parse_u32 (state, &new_node->mesh_index);
-      } else if (rei_json_string_eq (state, "scale", state->current_token)) {
+      } else if (rei_json_string_eq (state, "scale")) {
 	rei_json_parse_floats (state, new_node->scale_vector);
       }
     }
@@ -304,9 +304,9 @@ static void _s_gltf_parse_buffers (const char* const gltf_path, rei_json_state_t
     const jsmntok_t* current_buffer = state->current_token++;
 
     for (s32 j = 0; j < current_buffer->size; ++j) {
-      if (rei_json_string_eq (state, "byteLength", state->current_token)) {
+      if (rei_json_string_eq (state, "byteLength")) {
         rei_json_skip (state);
-      } else if (rei_json_string_eq (state, "uri", state->current_token)) {
+      } else if (rei_json_string_eq (state, "uri")) {
         rei_string_view_t uri;
 	rei_json_parse_string (state, &uri);
 
@@ -338,11 +338,11 @@ static void _s_gltf_parse_buffer_views (rei_json_state_t* state, rei_gltf_t* out
     const jsmntok_t* current_buffer_view = state->current_token++;
 
     for (s32 j = 0; j < current_buffer_view->size; ++j) {
-      if (rei_json_string_eq (state, "buffer", state->current_token)) {
+      if (rei_json_string_eq (state, "buffer")) {
         rei_json_parse_u32 (state, &new_buffer_view->buffer_index);
-      } else if (rei_json_string_eq (state, "byteLength", state->current_token)) {
+      } else if (rei_json_string_eq (state, "byteLength")) {
         rei_json_parse_u64 (state, &new_buffer_view->size);
-      } else if (rei_json_string_eq (state, "byteOffset", state->current_token)) {
+      } else if (rei_json_string_eq (state, "byteOffset")) {
         rei_json_parse_u64 (state, &new_buffer_view->offset);
       }
     }
@@ -362,15 +362,15 @@ static void _s_gltf_parse_accessors (rei_json_state_t* state, rei_gltf_t* out) {
     const jsmntok_t* current_accessor = state->current_token++;
 
     for (s32 j = 0; j < current_accessor->size; ++j) {
-      if (rei_json_string_eq (state, "bufferView", state->current_token)) {
+      if (rei_json_string_eq (state, "bufferView")) {
         rei_json_parse_u32 (state, &new_accessor->buffer_view_index);
-      } else if (rei_json_string_eq (state, "count", state->current_token)) {
+      } else if (rei_json_string_eq (state, "count")) {
         rei_json_parse_u32 (state, &new_accessor->count);
-      } else if (rei_json_string_eq (state, "byteOffset", state->current_token)) {
+      } else if (rei_json_string_eq (state, "byteOffset")) {
         rei_json_parse_u64 (state, &new_accessor->byte_offset);
-      } else if (rei_json_string_eq (state, "componentType", state->current_token)) {
+      } else if (rei_json_string_eq (state, "componentType")) {
         rei_json_parse_u32 (state, &new_accessor->component_type);
-      } else if (rei_json_string_eq (state, "type", state->current_token)) {
+      } else if (rei_json_string_eq (state, "type")) {
         rei_string_view_t type;
 	rei_json_parse_string (state, &type);
 
@@ -410,13 +410,13 @@ static void _s_gltf_parse_samplers (rei_json_state_t* state, rei_gltf_t* out) {
     const jsmntok_t* current_sampler = state->current_token++;
 
     for (s32 j = 0; j < current_sampler->size; ++j) {
-      if (rei_json_string_eq (state, "magFilter", state->current_token)) {
+      if (rei_json_string_eq (state, "magFilter")) {
         rei_json_parse_u32 (state, &new_sampler->mag_filter);
-      } else if (rei_json_string_eq (state, "minFilter", state->current_token)) {
+      } else if (rei_json_string_eq (state, "minFilter")) {
         rei_json_parse_u32 (state, &new_sampler->mag_filter);
-      } else if (rei_json_string_eq (state, "wrapS", state->current_token)) {
+      } else if (rei_json_string_eq (state, "wrapS")) {
         rei_json_parse_u32 (state, &new_sampler->mag_filter);
-      } else if (rei_json_string_eq (state, "wrapT", state->current_token)) {
+      } else if (rei_json_string_eq (state, "wrapT")) {
         rei_json_parse_u32 (state, &new_sampler->mag_filter);
       }
     }
@@ -436,7 +436,7 @@ static void _s_gltf_parse_images (rei_json_state_t* state, rei_gltf_t* out) {
     const jsmntok_t* current_image = state->current_token++;
 
     for (s32 j = 0; j < current_image->size; ++j) {
-      if (rei_json_string_eq (state, "uri", state->current_token)) {
+      if (rei_json_string_eq (state, "uri")) {
         rei_string_view_t uri;
 	rei_json_parse_string (state, &uri);
 
@@ -444,7 +444,7 @@ static void _s_gltf_parse_images (rei_json_state_t* state, rei_gltf_t* out) {
 	strncpy (new_image->uri, uri.src, uri.size);
 	new_image->uri[uri.size] = '\0';
 
-      } else if (rei_json_string_eq (state, "mimeType", state->current_token)) {
+      } else if (rei_json_string_eq (state, "mimeType")) {
         rei_string_view_t mime_type;
 	rei_json_parse_string (state, &mime_type);
 
@@ -471,9 +471,9 @@ static void _s_gltf_parse_textures (rei_json_state_t* state, rei_gltf_t* out) {
     const jsmntok_t* current_texture = state->current_token++;
 
     for (s32 j = 0; j < current_texture->size; ++j) {
-      if (rei_json_string_eq (state, "sampler", state->current_token)) {
+      if (rei_json_string_eq (state, "sampler")) {
         rei_json_parse_u32 (state, &new_texture->sampler_index);
-      } else if (rei_json_string_eq (state, "source", state->current_token)) {
+      } else if (rei_json_string_eq (state, "source")) {
         rei_json_parse_u32 (state, &new_texture->image_index);
       }
     }
@@ -493,17 +493,17 @@ static void _s_gltf_parse_materials (rei_json_state_t* state, rei_gltf_t* out) {
     const jsmntok_t* current_material = state->current_token++;
 
     for (s32 j = 0; j < current_material->size; ++j) {
-      if (rei_json_string_eq (state, "pbrMetallicRoughness", state->current_token)) {
+      if (rei_json_string_eq (state, "pbrMetallicRoughness")) {
         ++state->current_token;
         const jsmntok_t* pbr = state->current_token++;
 
 	for (s32 k = 0; k < pbr->size; ++k) {
-          if (rei_json_string_eq (state, "baseColorTexture", state->current_token)) {
+          if (rei_json_string_eq (state, "baseColorTexture")) {
 	    ++state->current_token;
             const jsmntok_t* albedo = state->current_token++;
 
 	    for (s32 m = 0; m < albedo->size; ++m) {
-	      if (rei_json_string_eq (state, "index", state->current_token)) {
+	      if (rei_json_string_eq (state, "index")) {
                 rei_json_parse_u32 (state, &new_material->albedo_index);
 	      } else {
                 rei_json_skip (state);
@@ -533,20 +533,20 @@ static void _s_gltf_parse_primitives (rei_json_state_t* state, rei_gltf_mesh_t* 
     rei_gltf_primitive_t* new_primitive = &out->primitives[i];
 
     for (s32 j = 0; j < primitive->size; ++j) {
-      if (rei_json_string_eq (state, "indices", state->current_token)) {
+      if (rei_json_string_eq (state, "indices")) {
         rei_json_parse_u32 (state, &new_primitive->indices_index);
-      } else if (rei_json_string_eq (state, "material", state->current_token)) {
+      } else if (rei_json_string_eq (state, "material")) {
         rei_json_parse_u32 (state, &new_primitive->material_index);
-      } else if (rei_json_string_eq (state, "attributes", state->current_token)) {
+      } else if (rei_json_string_eq (state, "attributes")) {
         ++state->current_token;
         const jsmntok_t* current_attribute = state->current_token++;
 
         for (s32 k = 0; k < current_attribute->size; ++k) {
-  	  if (rei_json_string_eq (state, "POSITION", state->current_token)) {
+  	  if (rei_json_string_eq (state, "POSITION")) {
             rei_json_parse_u32 (state, &new_primitive->position_index);
-  	  } else if (rei_json_string_eq (state, "NORMAL", state->current_token)) {
+  	  } else if (rei_json_string_eq (state, "NORMAL")) {
             rei_json_parse_u32 (state, &new_primitive->normal_index);
-  	  } else if (rei_json_string_eq (state, "TEXCOORD_0", state->current_token)) {
+  	  } else if (rei_json_string_eq (state, "TEXCOORD_0")) {
             rei_json_parse_u32 (state, &new_primitive->uv_index);
   	  } else {
             rei_json_skip (state);
@@ -572,7 +572,7 @@ static void _s_gltf_parse_meshes (rei_json_state_t* state, rei_gltf_t* out) {
     const jsmntok_t* current_mesh = state->current_token++;
 
     for (s32 j = 0; j < current_mesh->size; ++j) {
-      if (rei_json_string_eq (state, "primitives", state->current_token)) {
+      if (rei_json_string_eq (state, "primitives")) {
         _s_gltf_parse_primitives (state, new_mesh);
       } else {
         rei_json_skip (state);
@@ -595,16 +595,16 @@ static void _s_gltf_parse_animation_channels (rei_json_state_t* state, rei_gltf_
     const jsmntok_t* current_channel = state->current_token++;
 
     for (s32 j = 0; j < current_channel->size; ++j) {
-      if (rei_json_string_eq (state, "sampler", state->current_token)) {
+      if (rei_json_string_eq (state, "sampler")) {
         rei_json_parse_u32 (state, &new_channel->sampler_index);
-      } else if (rei_json_string_eq (state, "target", state->current_token)) {
+      } else if (rei_json_string_eq (state, "target")) {
         ++state->current_token;
 	const jsmntok_t* current_target = state->current_token++;
 
 	for (s32 k = 0; k < current_target->size; ++k) {
-          if (rei_json_string_eq (state, "node", state->current_token)) {
+          if (rei_json_string_eq (state, "node")) {
             rei_json_parse_u32 (state, &new_channel->target_node_index);
-	  } else if (rei_json_string_eq (state, "path", state->current_token)) {
+	  } else if (rei_json_string_eq (state, "path")) {
             rei_string_view_t path;
 	    rei_json_parse_string (state, &path);
 
@@ -644,9 +644,9 @@ static void _s_gltf_parse_animation_samplers (rei_json_state_t* state, rei_gltf_
     const jsmntok_t* current_sampler = state->current_token++;
 
     for (s32 j = 0; j < current_sampler->size; ++j) {
-      if (rei_json_string_eq (state, "input", state->current_token)) {
+      if (rei_json_string_eq (state, "input")) {
         rei_json_parse_u32 (state, &new_sampler->input);
-      } else if (rei_json_string_eq (state, "interpolation", state->current_token)) {
+      } else if (rei_json_string_eq (state, "interpolation")) {
         rei_string_view_t interpolation;
         rei_json_parse_string (state, &interpolation);
 
@@ -655,7 +655,7 @@ static void _s_gltf_parse_animation_samplers (rei_json_state_t* state, rei_gltf_
 	} else {
           REI_LOG_ERROR ("Unknown animation sampler interpolation %.*s", interpolation.size, interpolation.src);
 	}
-      } else if (rei_json_string_eq (state, "output", state->current_token)) {
+      } else if (rei_json_string_eq (state, "output")) {
         rei_json_parse_u32 (state, &new_sampler->output);
       }
     }
@@ -676,7 +676,7 @@ static void _s_gltf_parse_animations (rei_json_state_t* state, rei_gltf_t* out) 
     const jsmntok_t* current_animation = state->current_token++;
 
     for (s32 j = 0; j < current_animation->size; ++j) {
-      if (rei_json_string_eq (state, "channels", state->current_token)) {
+      if (rei_json_string_eq (state, "channels")) {
         _s_gltf_parse_animation_channels (state, new_animation);
       } else {
         _s_gltf_parse_animation_samplers (state, new_animation);
@@ -701,23 +701,23 @@ rei_result_e rei_gltf_load (const char* relative_path, rei_gltf_t* out) {
   out->animations = NULL;
 
   for (s32 i = 0; i < root_token->size; ++i) {
-    if (rei_json_string_eq (&json_state, "nodes", json_state.current_token)) {
+    if (rei_json_string_eq (&json_state, "nodes")) {
       _s_gltf_parse_nodes (&json_state, out);
-    } else if (rei_json_string_eq (&json_state, "buffers", json_state.current_token)) {
+    } else if (rei_json_string_eq (&json_state, "buffers")) {
       _s_gltf_parse_buffers (relative_path, &json_state, out);
-    } else if (rei_json_string_eq (&json_state, "bufferViews", json_state.current_token)) {
+    } else if (rei_json_string_eq (&json_state, "bufferViews")) {
       _s_gltf_parse_buffer_views (&json_state, out);
-    } else if (rei_json_string_eq (&json_state, "accessors", json_state.current_token)) {
+    } else if (rei_json_string_eq (&json_state, "accessors")) {
       _s_gltf_parse_accessors (&json_state, out);
-    } else if (rei_json_string_eq (&json_state, "samplers", json_state.current_token)) {
+    } else if (rei_json_string_eq (&json_state, "samplers")) {
       _s_gltf_parse_samplers (&json_state, out);
-    } else if (rei_json_string_eq (&json_state, "images", json_state.current_token)) {
+    } else if (rei_json_string_eq (&json_state, "images")) {
       _s_gltf_parse_images (&json_state, out);
-    } else if (rei_json_string_eq (&json_state, "textures", json_state.current_token)) {
+    } else if (rei_json_string_eq (&json_state, "textures")) {
       _s_gltf_parse_textures (&json_state, out);
-    } else if (rei_json_string_eq (&json_state, "materials", json_state.current_token)) {
+    } else if (rei_json_string_eq (&json_state, "materials")) {
       _s_gltf_parse_materials (&json_state, out);
-    } else if (rei_json_string_eq (&json_state, "meshes", json_state.current_token)) {
+    } else if (rei_json_string_eq (&json_state, "meshes")) {
       _s_gltf_parse_meshes (&json_state, out);
 #if 0
     } else if (rei_json_string_eq (&json_state, "animations", json_state.current_token)) {
