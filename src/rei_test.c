@@ -294,6 +294,7 @@ int main (void) {
 #endif
   const f32 delta_time = 1.f / 60.f;
 
+#if 0
   for (;;) {
     ImGuiIO* imgui_io = igGetIO ();
     imgui_io->DeltaTime = delta_time;
@@ -340,6 +341,7 @@ int main (void) {
     rei_vk_end_frame (&vk_device, vk_current_frame, &vk_swapchain, vk_image_index);
     ++frame_index;
   }
+#endif
 
 RESOURCE_CLEANUP_L:
   vkDeviceWaitIdle (vk_device.handle);

@@ -27,6 +27,8 @@ void rei_json_parse_u64 (rei_json_state_t* state, u64* out);
 void rei_json_parse_floats (rei_json_state_t* state, f32* out);
 void rei_json_parse_string (rei_json_state_t* state, rei_string_view_t* out);
 
-b8 rei_json_string_eq (const rei_json_state_t* state, const char* a);
+void rei_json_parse_array (rei_json_state_t* state, u32 elem_size, u32* out_count, void** out_data);
+
+b8 rei_json_string_eq (const rei_json_state_t* state, const char* a, u64 size);
 
 #endif /* REI_PARSE_H */

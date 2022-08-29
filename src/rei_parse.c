@@ -93,7 +93,16 @@ void rei_json_parse_string (rei_json_state_t* state, rei_string_view_t* out) {
   ++state->current_token;
 }
 
-b8 rei_json_string_eq (const rei_json_state_t* state, const char* a) {
+void rei_json_parse_array (rei_json_state_t* state, u32 elem_size, u32* out_count, void** out_data) {
+  ++state->current_token;
+  const jsmntok_t* array = state->current_token++;
+  REI_ASSERT (array->type == JSMN_ARRAY);
+
+  *out_count = (u32) array->size;
+  *out_data = malloc (elem_size * *out_count);
+}
+
+b8 rei_json_string_eq (const rei_json_state_t* state, const char* a, u64 size) {
   REI_ASSERT (state->current_token->type == JSMN_STRING);
-  return !strncmp (state->json + state->current_token->start, a, strlen (a));
+  return !memcmp (state->json + state->current_token->start, a, size);
 }
