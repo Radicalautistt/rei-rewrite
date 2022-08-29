@@ -1,6 +1,7 @@
 #!/bin/bash
 
-echo 'Building YXML...'
+echo -e '\e[1;32mBuilding YXML...\e[;0m'
+
 cd yxml
 gcc -Wall -Wextra -Wno-unused-parameter -O3 -pipe -I. -c yxml.c
 ar rcs libyxml.a yxml.o

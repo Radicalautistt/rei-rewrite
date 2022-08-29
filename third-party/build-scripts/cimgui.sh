@@ -1,6 +1,6 @@
 #!/bin/bash
 
-echo "Building CIMGUI..."
+echo -e '\e[1;32mBuilding CIMGUI...\e[;0m'
 
 cd cimgui
 make -j4 static
