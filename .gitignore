@@ -50,10 +50,17 @@ modules.order
 Module.symvers
 Mkfile.old
 dkms.conf
+
 rei
 .ccls
 *.gltf
 *.bin
+*.jpg
 *.jpeg
 *.png
+*.mkv
+*.fnt
 *.spv
+*.rtex
+*.mtl
+imgui.ini
