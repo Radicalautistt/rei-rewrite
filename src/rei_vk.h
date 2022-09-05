@@ -41,39 +41,6 @@
 #define REI_VK_BIND_DESCRIPTORS(__cmd_buffer, __pipeline_layout, __count, __descriptors) \
   vkCmdBindDescriptorSets (__cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, __pipeline_layout, 0, __count, __descriptors, 0, NULL);
 
-#define REI_VK_CREATE_STAGING_BUFFER(__allocator, __size, __out) do {           \
-  rei_vk_create_buffer (                                                        \
-    __allocator,                                                                \
-    __size,                                                                     \
-    VK_BUFFER_USAGE_TRANSFER_SRC_BIT,                                           \
-    VMA_MEMORY_USAGE_CPU_ONLY,                                                  \
-    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, \
-    __out                                                                       \
-  );                                                                            \
-} while (0)
-
-#define REI_VK_CREATE_DYN_BUFFER(__allocator, __size, __usage, __out) do {      \
-  rei_vk_create_buffer (                                                        \
-    __allocator,                                                                \
-    __size,                                                                     \
-    __usage | VK_BUFFER_USAGE_TRANSFER_DST_BIT,                                 \
-    VMA_MEMORY_USAGE_CPU_TO_GPU,                                                \
-    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, \
-    __out                                                                       \
-  );                                                                            \
-} while (0)
-
-#define REI_VK_CREATE_GPU_BUFFER(__allocator, __size, __usage, __out) do { \
-  rei_vk_create_buffer (                                                   \
-    __allocator,                                                           \
-    __size,                                                                \
-    __usage | VK_BUFFER_USAGE_TRANSFER_DST_BIT,                            \
-    VMA_MEMORY_USAGE_GPU_ONLY,                                             \
-    VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,                                   \
-    __out                                                                  \
-  );                                                                       \
-} while (0)
-
 #define REI_FD_VULKAN_TYPE(__name) typedef struct __name##_T* __name
 
 // Forward declare Vulkan types.
@@ -81,6 +48,14 @@ REI_FD_VULKAN_TYPE (VmaAllocator);
 REI_FD_VULKAN_TYPE (VmaAllocation);
 
 typedef struct xcb_connection_t xcb_connection_t;
+
+typedef enum rei_vk_buffer_type_e {
+  REI_VK_BUFFER_TYPE_STAGING,
+  REI_VK_BUFFER_TYPE_IDX_CONST,
+  REI_VK_BUFFER_TYPE_VTX_CONST,
+  REI_VK_BUFFER_TYPE_IDX_DYNAMIC,
+  REI_VK_BUFFER_TYPE_VTX_DYNAMIC,
+} rei_vk_buffer_type_e;
 
 typedef struct rei_vk_gfx_pipeline_ci_t {
   VkPipelineCache cache;
@@ -128,6 +103,11 @@ typedef struct rei_vk_device_t {
   u32 gfx_index;
   u32 present_index;
 } rei_vk_device_t;
+
+typedef struct rei_vk_allocator_t {
+  VmaAllocator vma_handle;
+  pthread_mutex_t mutex;
+} rei_vk_allocator_t;
 
 typedef struct rei_vk_render_pass_t {
   VkRenderPass handle;
@@ -209,28 +189,28 @@ void rei_vk_create_device (
   rei_vk_device_t* out
 );
 
-void rei_vk_create_allocator (VkInstance instance, VkPhysicalDevice physical_device, const rei_vk_device_t* device, VmaAllocator* out);
+void rei_vk_create_allocator (VkInstance instance, VkPhysicalDevice physical_device, const rei_vk_device_t* device, rei_vk_allocator_t* out);
+void rei_vk_destroy_allocator (rei_vk_allocator_t* allocator);
 
-void rei_vk_create_image (const rei_vk_device_t* device, VmaAllocator allocator, const rei_vk_image_ci_t* create_info, rei_vk_image_t* out);
-void rei_vk_destroy_image (const rei_vk_device_t* device, VmaAllocator allocator, rei_vk_image_t* image);
-
-void rei_vk_create_buffer (
-  VmaAllocator allocator,
-  u64 size,
-  VkBufferUsageFlags usage,
-  u64 vma_memory_usage,
-  VkMemoryPropertyFlags memory_flags,
-  rei_vk_buffer_t* out
+void rei_vk_create_image (
+  const rei_vk_device_t* device,
+  rei_vk_allocator_t* allocator,
+  const rei_vk_image_ci_t* create_info,
+  rei_vk_image_t* out
 );
 
-void rei_vk_map_buffer (VmaAllocator allocator, rei_vk_buffer_t* buffer);
-void rei_vk_unmap_buffer (VmaAllocator allocator, rei_vk_buffer_t* buffer);
+void rei_vk_destroy_image (const rei_vk_device_t* device, rei_vk_allocator_t* allocator, rei_vk_image_t* image);
 
-void rei_vk_destroy_buffer (VmaAllocator allocator, rei_vk_buffer_t* buffer);
+void rei_vk_create_buffer (rei_vk_allocator_t* allocator, u64 size, rei_vk_buffer_type_e type, rei_vk_buffer_t* out);
+
+void rei_vk_map_buffer (rei_vk_allocator_t* allocator, rei_vk_buffer_t* buffer);
+void rei_vk_unmap_buffer (rei_vk_allocator_t* allocator, rei_vk_buffer_t* buffer);
+
+void rei_vk_destroy_buffer (rei_vk_allocator_t* allocator, rei_vk_buffer_t* buffer);
 
 void rei_vk_create_swapchain (
   const rei_vk_device_t* device,
-  VmaAllocator allocator,
+  rei_vk_allocator_t* allocator,
   VkSwapchainKHR old,
   VkSurfaceKHR surface,
   u32 width,
@@ -239,7 +219,7 @@ void rei_vk_create_swapchain (
   rei_vk_swapchain_t* out
 );
 
-void rei_vk_destroy_swapchain (const rei_vk_device_t* device, VmaAllocator allocator, rei_vk_swapchain_t* swapchain);
+void rei_vk_destroy_swapchain (const rei_vk_device_t* device, rei_vk_allocator_t* allocator, rei_vk_swapchain_t* swapchain);
 
 void rei_vk_create_render_pass (
   const rei_vk_device_t* device,
@@ -311,7 +291,7 @@ void rei_vk_copy_buffer_to_image_cmd (
 // Decompress and create a texture loaded from a rtex file.
 void rei_vk_create_texture_cmd (
   const rei_vk_device_t* device,
-  VmaAllocator allocator,
+  rei_vk_allocator_t* allocator,
   VkCommandBuffer cmd_buffer,
   rei_vk_buffer_t* staging_buffer,
   const rei_texture_t* src,
@@ -325,7 +305,7 @@ void rei_vk_create_sampler (const rei_vk_device_t* device, f32 min_lod, f32 max_
 // Create texture from raw pixels in RGBA format.
 void rei_vk_create_texture_raw (
   const rei_vk_device_t* device,
-  VmaAllocator allocator,
+  rei_vk_allocator_t* allocator,
   const rei_vk_imm_ctxt_t* context,
   u32 width,
   u32 height,

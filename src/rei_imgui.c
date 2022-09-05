@@ -3,11 +3,9 @@
 #include "rei_imgui.h"
 #include "rei_window.h"
 
-#include <VulkanMemoryAllocator/include/vk_mem_alloc.h>
-
 void rei_create_imgui_ctxt (
   const rei_vk_device_t* vk_device,
-  VmaAllocator vk_vk_allocator,
+  rei_vk_allocator_t* vk_allocator,
   const rei_vk_imm_ctxt_t* vk_imm_ctxt,
   rei_imgui_ctxt_t* out) {
 
@@ -20,7 +18,7 @@ void rei_create_imgui_ctxt (
     const ImGuiIO* io = igGetIO ();
     ImFontAtlas_GetTexDataAsRGBA32 (io->Fonts, &pixels, &width, &height, NULL);
 
-    rei_vk_create_texture_raw (vk_device, vk_vk_allocator, vk_imm_ctxt, (u32) width, (u32) height, pixels, &out->font_texture);
+    rei_vk_create_texture_raw (vk_device, vk_allocator, vk_imm_ctxt, (u32) width, (u32) height, pixels, &out->font_texture);
     ImFontAtlas_ClearTexData (io->Fonts);
     ImFontAtlas_SetTexID (io->Fonts, (void*) ((u64) out->font_texture.handle));
   }
@@ -46,7 +44,7 @@ void rei_create_imgui_ctxt (
   #undef __SET_BLACK_COLOR
 }
 
-void rei_destroy_imgui_ctxt (const rei_vk_device_t* vk_device, VmaAllocator vk_allocator, rei_imgui_ctxt_t* ctxt) {
+void rei_destroy_imgui_ctxt (const rei_vk_device_t* vk_device, rei_vk_allocator_t* vk_allocator, rei_imgui_ctxt_t* ctxt) {
   rei_vk_destroy_image (vk_device, vk_allocator, &ctxt->font_texture);
 
   igDestroyContext (ctxt->handle);
@@ -54,7 +52,7 @@ void rei_destroy_imgui_ctxt (const rei_vk_device_t* vk_device, VmaAllocator vk_a
 
 void rei_imgui_create_frame_data (
   const rei_vk_device_t* vk_device,
-  VmaAllocator vk_allocator,
+  rei_vk_allocator_t* vk_allocator,
   const rei_vk_render_pass_t* vk_render_pass,
   VkDescriptorPool vk_desc_pool,
   VkDescriptorSetLayout vk_desc_layout,
@@ -66,8 +64,8 @@ void rei_imgui_create_frame_data (
   // which would otherwise be mandatory to do before buffer deletion.
   for (u32 i = 0; i < REI_VK_FRAME_COUNT; ++i) {
     out->buffers[i] = malloc (sizeof **out->buffers);
-    REI_VK_CREATE_DYN_BUFFER (vk_allocator, 1, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, &out->buffers[i]->vtx_buffer);
-    REI_VK_CREATE_DYN_BUFFER (vk_allocator, 1, VK_BUFFER_USAGE_INDEX_BUFFER_BIT, &out->buffers[i]->idx_buffer);
+    rei_vk_create_buffer (vk_allocator, 1, REI_VK_BUFFER_TYPE_VTX_DYNAMIC, &out->buffers[i]->vtx_buffer);
+    rei_vk_create_buffer (vk_allocator, 1, REI_VK_BUFFER_TYPE_IDX_DYNAMIC, &out->buffers[i]->idx_buffer);
 
     rei_vk_map_buffer (vk_allocator, &out->buffers[i]->vtx_buffer);
     rei_vk_map_buffer (vk_allocator, &out->buffers[i]->idx_buffer);
@@ -197,7 +195,7 @@ void rei_imgui_create_frame_data (
   rei_vk_create_gfx_pipeline (vk_device, &info, &out->pipeline);
 }
 
-void rei_imgui_destroy_frame_data (const rei_vk_device_t* vk_device, VmaAllocator vk_allocator, rei_imgui_frame_data_t* frame_data) {
+void rei_imgui_destroy_frame_data (const rei_vk_device_t* vk_device, rei_vk_allocator_t* vk_allocator, rei_imgui_frame_data_t* frame_data) {
   vkDestroyPipeline (vk_device->handle, frame_data->pipeline, NULL);
   vkDestroyPipelineLayout (vk_device->handle, frame_data->pipeline_layout, NULL);
 
@@ -247,7 +245,12 @@ void rei_imgui_handle_events (ImGuiIO* io, const rei_xcb_window_t* window, const
   }
 }
 
-void rei_imgui_update_buffers (VmaAllocator vk_allocator, rei_imgui_frame_data_t* frame_data, const ImDrawData* draw_data, u32 frame_index) {
+void rei_imgui_update_buffers (
+  rei_vk_allocator_t* vk_allocator,
+  rei_imgui_frame_data_t* frame_data,
+  const ImDrawData* draw_data,
+  u32 frame_index) {
+
   const u64 new_idx_buffer_size = sizeof (ImDrawIdx) * (u64) draw_data->TotalIdxCount;
   const u64 new_vtx_buffer_size = sizeof (ImDrawVert) * (u64) draw_data->TotalVtxCount;
 
@@ -259,7 +262,7 @@ void rei_imgui_update_buffers (VmaAllocator vk_allocator, rei_imgui_frame_data_t
     rei_vk_unmap_buffer (vk_allocator, vtx_buffer);
     rei_vk_destroy_buffer (vk_allocator, vtx_buffer);
 
-    REI_VK_CREATE_DYN_BUFFER (vk_allocator, new_vtx_buffer_size, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, vtx_buffer);
+    rei_vk_create_buffer (vk_allocator, new_vtx_buffer_size, REI_VK_BUFFER_TYPE_VTX_DYNAMIC, vtx_buffer);
     rei_vk_map_buffer (vk_allocator, vtx_buffer);
   }
 
@@ -267,7 +270,7 @@ void rei_imgui_update_buffers (VmaAllocator vk_allocator, rei_imgui_frame_data_t
     rei_vk_unmap_buffer (vk_allocator, idx_buffer);
     rei_vk_destroy_buffer (vk_allocator, idx_buffer);
 
-    REI_VK_CREATE_DYN_BUFFER (vk_allocator, new_vtx_buffer_size, VK_BUFFER_USAGE_INDEX_BUFFER_BIT, idx_buffer);
+    rei_vk_create_buffer (vk_allocator, new_idx_buffer_size, REI_VK_BUFFER_TYPE_IDX_DYNAMIC, idx_buffer);
     rei_vk_map_buffer (vk_allocator, idx_buffer);
   }
 

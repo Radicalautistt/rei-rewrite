@@ -7,6 +7,7 @@
 #include "rei_debug.h"
 #include "rei_defines.h"
 
+#include <pthread.h>
 #include <lz4/lib/lz4.h>
 #include <VulkanMemoryAllocator/include/vk_mem_alloc.h>
 
@@ -336,7 +337,7 @@ void rei_vk_create_device (
   vkGetDeviceQueue (out->handle, out->present_index, 0, &out->present_queue);
 }
 
-void rei_vk_create_allocator (VkInstance instance, VkPhysicalDevice physical_device, const rei_vk_device_t* device, VmaAllocator* out) {
+void rei_vk_create_allocator (VkInstance instance, VkPhysicalDevice physical_device, const rei_vk_device_t* device, rei_vk_allocator_t* out) {
   // Provide all the function pointers VMA needs to do its stuff.
   VmaVulkanFunctions vk_function_pointers = {
     .vkMapMemory = vkMapMemory,
@@ -372,10 +373,22 @@ void rei_vk_create_allocator (VkInstance instance, VkPhysicalDevice physical_dev
     .pTypeExternalMemoryHandleTypes = NULL,
   };
 
-  REI_VK_CHECK (vmaCreateAllocator (&create_info, out));
+  REI_VK_CHECK (vmaCreateAllocator (&create_info, &out->vma_handle));
+
+  pthread_mutex_init (&out->mutex, NULL);
 }
 
-void rei_vk_create_image (const rei_vk_device_t* device, VmaAllocator allocator, const rei_vk_image_ci_t* create_info, rei_vk_image_t* out) {
+void rei_vk_destroy_allocator (rei_vk_allocator_t* allocator) {
+  pthread_mutex_destroy (&allocator->mutex);
+  vmaDestroyAllocator (allocator->vma_handle);
+}
+
+void rei_vk_create_image (
+  const rei_vk_device_t* device,
+  rei_vk_allocator_t* allocator,
+  const rei_vk_image_ci_t* create_info,
+  rei_vk_image_t* out) {
+
   VkImageCreateInfo image_info = {
     .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
     .pNext = NULL,
@@ -398,7 +411,7 @@ void rei_vk_create_image (const rei_vk_device_t* device, VmaAllocator allocator,
 
   VmaAllocationCreateInfo alloc_info = {.usage = VMA_MEMORY_USAGE_GPU_ONLY, .requiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT};
 
-  REI_VK_CHECK (vmaCreateImage (allocator, &image_info, &alloc_info, &out->handle, &out->memory, NULL));
+  REI_VK_CHECK (vmaCreateImage (allocator->vma_handle, &image_info, &alloc_info, &out->handle, &out->memory, NULL));
 
   VkImageViewCreateInfo view_info = {
     .pNext = NULL,
@@ -423,41 +436,63 @@ void rei_vk_create_image (const rei_vk_device_t* device, VmaAllocator allocator,
   REI_VK_CHECK (vkCreateImageView (device->handle, &view_info, NULL, &out->view));
 }
 
-void rei_vk_destroy_image (const rei_vk_device_t* device, VmaAllocator allocator, rei_vk_image_t* image) {
+void rei_vk_destroy_image (const rei_vk_device_t* device, rei_vk_allocator_t* allocator, rei_vk_image_t* image) {
   vkDestroyImageView (device->handle, image->view, NULL);
-  vmaDestroyImage (allocator, image->handle, image->memory);
+  vmaDestroyImage (allocator->vma_handle, image->handle, image->memory);
 }
 
-void rei_vk_create_buffer (
-  VmaAllocator allocator,
-  u64 size,
-  VkBufferUsageFlags usage,
-  u64 vma_memory_usage,
-  VkMemoryPropertyFlags memory_flags,
-  rei_vk_buffer_t* out) {
+void rei_vk_create_buffer (rei_vk_allocator_t* allocator, u64 size, rei_vk_buffer_type_e type, rei_vk_buffer_t* out) {
+  // Lookup tables for which buffer type serves as an index. Alternative to ugly ifs/switches.
+  static const VmaMemoryUsage vma_mem_usage_flags[] = {
+    VMA_MEMORY_USAGE_CPU_ONLY,
+    VMA_MEMORY_USAGE_GPU_ONLY,
+    VMA_MEMORY_USAGE_GPU_ONLY,
+    VMA_MEMORY_USAGE_CPU_TO_GPU,
+    VMA_MEMORY_USAGE_CPU_TO_GPU,
+  };
 
-  VkBufferCreateInfo create_info = {.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, .size = size, .usage = usage};
-  VmaAllocationCreateInfo alloc_info = {.usage = (VmaMemoryUsage) vma_memory_usage, .requiredFlags = memory_flags};
+  static const VkBufferUsageFlags buffer_usage_flags[] = {
+    VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+    VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+    VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+    VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+    VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+  };
+
+  static const VkMemoryPropertyFlags mem_property_flags[] = {
+    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+    VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+    VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+  };
+
+  const VkBufferCreateInfo create_info = { .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, .size = size, .usage = buffer_usage_flags[type]};
+  const VmaAllocationCreateInfo alloc_info = {.usage = vma_mem_usage_flags[type], .requiredFlags = mem_property_flags[type]};
 
   out->size = size;
-  REI_VK_CHECK (vmaCreateBuffer (allocator, &create_info, &alloc_info, &out->handle, &out->memory, NULL));
+  REI_VK_CHECK (vmaCreateBuffer (allocator->vma_handle, &create_info, &alloc_info, &out->handle, &out->memory, NULL));
 }
 
-void rei_vk_map_buffer (VmaAllocator allocator, rei_vk_buffer_t* buffer) {
-  REI_VK_CHECK (vmaMapMemory (allocator, buffer->memory, &buffer->mapped));
+void rei_vk_map_buffer (rei_vk_allocator_t* allocator, rei_vk_buffer_t* buffer) {
+  pthread_mutex_lock (&allocator->mutex);
+  REI_VK_CHECK (vmaMapMemory (allocator->vma_handle, buffer->memory, &buffer->mapped));
+  pthread_mutex_unlock (&allocator->mutex);
 }
 
-void rei_vk_unmap_buffer (VmaAllocator allocator, rei_vk_buffer_t* buffer) {
-  vmaUnmapMemory (allocator, buffer->memory);
+void rei_vk_unmap_buffer (rei_vk_allocator_t* allocator, rei_vk_buffer_t* buffer) {
+  pthread_mutex_lock (&allocator->mutex);
+  vmaUnmapMemory (allocator->vma_handle, buffer->memory);
+  pthread_mutex_unlock (&allocator->mutex);
 }
 
-void rei_vk_destroy_buffer (VmaAllocator allocator, rei_vk_buffer_t* buffer) {
-  vmaDestroyBuffer (allocator, buffer->handle, buffer->memory);
+void rei_vk_destroy_buffer (rei_vk_allocator_t* allocator, rei_vk_buffer_t* buffer) {
+  vmaDestroyBuffer (allocator->vma_handle, buffer->handle, buffer->memory);
 }
 
 void rei_vk_create_swapchain (
   const rei_vk_device_t* device,
-  VmaAllocator allocator,
+  rei_vk_allocator_t* allocator,
   VkSwapchainKHR old,
   VkSurfaceKHR surface,
   u32 width,
@@ -573,7 +608,7 @@ void rei_vk_create_swapchain (
   rei_vk_create_image (device, allocator, &info, &out->images->depth_image);
 }
 
-void rei_vk_destroy_swapchain (const rei_vk_device_t* device, VmaAllocator allocator, rei_vk_swapchain_t* swapchain) {
+void rei_vk_destroy_swapchain (const rei_vk_device_t* device, rei_vk_allocator_t* allocator, rei_vk_swapchain_t* swapchain) {
   rei_vk_destroy_image (device, allocator, &swapchain->images->depth_image);
   for (u32 i = 0; i < swapchain->image_count; ++i) vkDestroyImageView (device->handle, swapchain->images->views[i], NULL);
   vkDestroySwapchainKHR (device->handle, swapchain->handle, NULL);
@@ -1118,7 +1153,7 @@ void rei_vk_copy_buffer_to_image_cmd (
 
 void rei_vk_create_texture_cmd (
   const rei_vk_device_t* device,
-  VmaAllocator allocator,
+  rei_vk_allocator_t* allocator,
   VkCommandBuffer cmd_buffer,
   rei_vk_buffer_t* staging_buffer,
   const rei_texture_t* src,
@@ -1127,7 +1162,7 @@ void rei_vk_create_texture_cmd (
   REI_ASSERT (src->component_count == 3 || src->component_count == 4);
 
   const u64 image_size = src->width * src->height * src->component_count;
-  REI_VK_CREATE_STAGING_BUFFER (allocator, image_size, staging_buffer);
+  rei_vk_create_buffer (allocator, image_size, REI_VK_BUFFER_TYPE_STAGING, staging_buffer);
 
   rei_vk_map_buffer (allocator, staging_buffer);
   LZ4_decompress_safe (src->compressed_data, (char*) staging_buffer->mapped, (s32) src->compressed_size, (s32) image_size);
@@ -1184,7 +1219,7 @@ void rei_vk_create_texture_cmd (
 
 void rei_vk_create_texture_raw (
   const rei_vk_device_t* device,
-  VmaAllocator allocator,
+  rei_vk_allocator_t* allocator,
   const rei_vk_imm_ctxt_t* context,
   u32 width,
   u32 height,
@@ -1194,7 +1229,7 @@ void rei_vk_create_texture_raw (
   const u64 image_size = (u64) (width * height * 4);
 
   rei_vk_buffer_t staging_buffer;
-  REI_VK_CREATE_STAGING_BUFFER (allocator, image_size, &staging_buffer);
+  rei_vk_create_buffer (allocator, image_size, REI_VK_BUFFER_TYPE_STAGING, &staging_buffer);
 
   rei_vk_map_buffer (allocator, &staging_buffer);
   memcpy (staging_buffer.mapped, src, image_size);
