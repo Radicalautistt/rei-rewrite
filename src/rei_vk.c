@@ -11,6 +11,20 @@
 #include <lz4/lib/lz4.h>
 #include <VulkanMemoryAllocator/include/vk_mem_alloc.h>
 
+#define _S_VK_VERSION VK_API_VERSION_1_0
+#define _S_IMAGE_FORMAT VK_FORMAT_B8G8R8A8_SRGB
+#define _S_TEXTURE_FORMAT VK_FORMAT_R8G8B8A8_SRGB
+#define _S_DEPTH_FORMAT VK_FORMAT_X8_D24_UNORM_PACK32
+
+#define _S_REQUIRED_DEVICE_EXT(__out) const char* const __out[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME}
+#define _S_REQUIRED_DEVICE_EXT_COUNT(__out) const u32 __out = 1
+
+struct _s_queue_indices_t {
+  u32 gfx;
+  u32 present;
+  u32 transfer;
+};
+
 REI_IGNORE_WARN_START (-Wunused-function)
 
 static VKAPI_ATTR VkBool32 VKAPI_CALL _s_vk_debug_callback (
@@ -33,12 +47,103 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL _s_vk_debug_callback (
 
 REI_IGNORE_WARN_STOP
 
-static void _s_set_swapchain_surface_format (VkPhysicalDevice physical_device, VkSurfaceKHR surface, VkSurfaceFormatKHR* out) {
+u32 _s_check_extensions (const VkExtensionProperties* available, u32 available_count, const char* const* required, u32 required_count) {
+  u32 matched_count = 0;
+
+  for (u32 i = 0; i < required_count; ++i) {
+    for (u32 j = 0; j < available_count; ++j) {
+      if (!strcmp (available[j].extensionName, required[i])) {
+        ++matched_count;
+        break;
+      }
+    }
+  }
+
+  return matched_count;
+}
+
+b8 _s_find_queue_indices (VkPhysicalDevice device, VkSurfaceKHR surface, struct _s_queue_indices_t* out) {
+  out->gfx = out->present = out->transfer = REI_U32_MAX;
+
+  u32 count = 0;
+  vkGetPhysicalDeviceQueueFamilyProperties (device, &count, NULL);
+
+  VkQueueFamilyProperties* props = alloca (sizeof *props * count);
+  vkGetPhysicalDeviceQueueFamilyProperties (device, &count, props);
+
+  #define IS_VALID(queue) (out->queue != REI_U32_MAX)
+
+  for (u32 i = 0; i < count; ++i) {
+    const VkQueueFamilyProperties* current = &props[i];
+
+    if (current->queueCount) {
+      VkBool32 present = VK_FALSE;
+      REI_VK_CHECK (vkGetPhysicalDeviceSurfaceSupportKHR (device, i, surface, &present));
+
+      if (present) out->present = i;
+      if (current->queueFlags & VK_QUEUE_GRAPHICS_BIT) out->gfx = i;
+      if (current->queueFlags & VK_QUEUE_TRANSFER_BIT) out->transfer = i;
+
+      if (IS_VALID (gfx) && IS_VALID (present) && IS_VALID (transfer)) {
+        return REI_TRUE;
+      }
+    }
+  }
+
+  #undef IS_VALID
+  return REI_FALSE;
+}
+
+void _s_choose_gpu (rei_vk_instance_t* out) {
+  out->gpu = VK_NULL_HANDLE;
+
+  u32 device_count = 0;
+  REI_VK_CHECK (vkEnumeratePhysicalDevices (out->handle, &device_count, NULL));
+
+  VkPhysicalDevice* devices = alloca (sizeof *devices * device_count);
+  REI_VK_CHECK (vkEnumeratePhysicalDevices (out->handle, &device_count, devices));
+
+  _S_REQUIRED_DEVICE_EXT (required_ext);
+  _S_REQUIRED_DEVICE_EXT_COUNT (required_ext_count);
+
+  for (u32 i = 0; i < device_count; ++i) {
+    const VkPhysicalDevice current = devices[i];
+
+    u32 ext_count = 0;
+    REI_VK_CHECK (vkEnumerateDeviceExtensionProperties (current, NULL, &ext_count, NULL));
+
+    VkExtensionProperties* extensions = alloca (sizeof *extensions * ext_count);
+    REI_VK_CHECK (vkEnumerateDeviceExtensionProperties (current, NULL, &ext_count, extensions));
+
+    const u32 matched_ext_count = _s_check_extensions (extensions, ext_count, required_ext, required_ext_count);
+
+    u32 format_count = 0, present_mode_count = 0;
+    REI_VK_CHECK (vkGetPhysicalDeviceSurfaceFormatsKHR (current, out->surface, &format_count, NULL));
+    REI_VK_CHECK (vkGetPhysicalDeviceSurfacePresentModesKHR (current, out->surface, &present_mode_count, NULL));
+
+    struct _s_queue_indices_t indices;
+    const b8 supports_swapchain = format_count && present_mode_count;
+    const b8 has_queue_families = _s_find_queue_indices (current, out->surface, &indices);
+
+    if (has_queue_families && supports_swapchain && (matched_ext_count == required_ext_count)) {
+      out->gpu = current;
+      break;
+    }
+  }
+
+  if (!out->gpu) {
+    REI_LOG_STR_ERROR ("Vk initialization failure: unable to choose a suitable physical device.");
+    exit (EXIT_FAILURE);
+  }
+}
+
+
+static void _s_set_swapchain_surface_format (const rei_vk_instance_t* instance, VkSurfaceFormatKHR* out) {
   u32 available_count = 0;
-  REI_VK_CHECK (vkGetPhysicalDeviceSurfaceFormatsKHR (physical_device, surface, &available_count, NULL));
+  REI_VK_CHECK (vkGetPhysicalDeviceSurfaceFormatsKHR (instance->gpu, instance->surface, &available_count, NULL));
 
   VkSurfaceFormatKHR* available = alloca (sizeof *available * available_count);
-  REI_VK_CHECK (vkGetPhysicalDeviceSurfaceFormatsKHR (physical_device, surface, &available_count, available));
+  REI_VK_CHECK (vkGetPhysicalDeviceSurfaceFormatsKHR (instance->gpu, instance->surface, &available_count, available));
 
   const VkFormat supported[] = {VK_FORMAT_B8G8R8A8_SRGB};
   const u32 supported_count = REI_ARRAY_SIZE (supported);
@@ -55,15 +160,15 @@ static void _s_set_swapchain_surface_format (VkPhysicalDevice physical_device, V
   }
 }
 
-static void _s_set_swapchain_present_mode (VkPhysicalDevice physical_device, VkSurfaceKHR surface, VkPresentModeKHR* out) {
+static void _s_set_swapchain_present_mode (const rei_vk_instance_t* instance, VkPresentModeKHR* out) {
   // Set out to be FIFO by default since it is present on all the devices.
   *out = VK_PRESENT_MODE_FIFO_KHR;
 
   u32 count = 0;
-  REI_VK_CHECK (vkGetPhysicalDeviceSurfacePresentModesKHR (physical_device, surface, &count, NULL));
+  REI_VK_CHECK (vkGetPhysicalDeviceSurfacePresentModesKHR (instance->gpu, instance->surface, &count, NULL));
 
   VkPresentModeKHR* modes = alloca (sizeof *modes * count);
-  REI_VK_CHECK (vkGetPhysicalDeviceSurfacePresentModesKHR (physical_device, surface, &count, modes));
+  REI_VK_CHECK (vkGetPhysicalDeviceSurfacePresentModesKHR (instance->gpu, instance->surface, &count, modes));
 
   // But prefer Mailbox.
   for (u32 i = 0; i < count; ++i) {
@@ -107,21 +212,6 @@ const char* rei_vk_show_error (VkResult error) {
   #undef SHOW_ERROR
 }
 
-u32 rei_vk_check_extensions (const VkExtensionProperties* available, u32 available_count, const char* const* required, u32 required_count) {
-  u32 matched_count = 0;
-
-  for (u32 i = 0; i < required_count; ++i) {
-    for (u32 j = 0; j < available_count; ++j) {
-      if (!strcmp (available[j].extensionName, required[i])) {
-        ++matched_count;
-	break;
-      }
-    }
-  }
-
-  return matched_count;
-}
-
 void rei_vk_create_instance_linux (xcb_connection_t* xcb_conn, u32 xcb_window, rei_vk_instance_t* out) {
   const char* const required_ext[] = {
     VK_KHR_SURFACE_EXTENSION_NAME,
@@ -140,7 +230,7 @@ void rei_vk_create_instance_linux (xcb_connection_t* xcb_conn, u32 xcb_window, r
   VkExtensionProperties* available = alloca (sizeof *available * available_count);
   REI_VK_CHECK (vkEnumerateInstanceExtensionProperties (NULL, &available_count, available));
 
-  u32 matched_count = rei_vk_check_extensions (available, available_count, required_ext, required_ext_count);
+  u32 matched_count = _s_check_extensions (available, available_count, required_ext, required_ext_count);
 
   if (matched_count != required_ext_count) {
     REI_LOG_STR_ERROR ("Vk initialization failure: required vulkan extensions aren't supported by this device.");
@@ -150,7 +240,7 @@ void rei_vk_create_instance_linux (xcb_connection_t* xcb_conn, u32 xcb_window, r
 
   VkInstanceCreateInfo create_info = {
     .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
-    .pApplicationInfo = &(VkApplicationInfo) {.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO, .apiVersion = REI_VK_VERSION},
+    .pApplicationInfo = &(VkApplicationInfo) {.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO, .apiVersion = _S_VK_VERSION},
     .ppEnabledExtensionNames = required_ext,
     .enabledExtensionCount = required_ext_count,
   };
@@ -188,6 +278,8 @@ void rei_vk_create_instance_linux (xcb_connection_t* xcb_conn, u32 xcb_window, r
   };
 
   REI_VK_CHECK (vkCreateXcbSurfaceKHR (out->handle, &surface_ci, NULL, &out->surface));
+
+  _s_choose_gpu (out);
 }
 
 void rei_vk_destroy_instance (rei_vk_instance_t* instance) {
@@ -198,93 +290,9 @@ void rei_vk_destroy_instance (rei_vk_instance_t* instance) {
   vkDestroyInstance (instance->handle, NULL);
 }
 
-b8 rei_vk_find_queue_indices (VkPhysicalDevice device, VkSurfaceKHR surface, rei_vk_queue_indices_t* out) {
-  out->gfx = out->present = out->transfer = REI_U32_MAX;
-
-  u32 count = 0;
-  vkGetPhysicalDeviceQueueFamilyProperties (device, &count, NULL);
-
-  VkQueueFamilyProperties* props = alloca (sizeof *props * count);
-  vkGetPhysicalDeviceQueueFamilyProperties (device, &count, props);
-
-  #define IS_VALID(queue) (out->queue != REI_U32_MAX)
-
-  for (u32 i = 0; i < count; ++i) {
-    const VkQueueFamilyProperties* current = &props[i];
-
-    if (current->queueCount) {
-      VkBool32 present = VK_FALSE;
-      REI_VK_CHECK (vkGetPhysicalDeviceSurfaceSupportKHR (device, i, surface, &present));
-
-      if (present) out->present = i;
-      if (current->queueFlags & VK_QUEUE_GRAPHICS_BIT) out->gfx = i;
-      if (current->queueFlags & VK_QUEUE_TRANSFER_BIT) out->transfer = i;
-
-      if (IS_VALID (gfx) && IS_VALID (present) && IS_VALID (transfer)) {
-        return REI_TRUE;
-      }
-    }
-  }
-
-  #undef IS_VALID
-  return REI_FALSE;
-}
-
-void rei_vk_choose_gpu (const rei_vk_instance_t* instance, const char* const* required_ext, u32 required_ext_count, VkPhysicalDevice* out) {
-  *out = VK_NULL_HANDLE;
-
-  u32 device_count = 0;
-  REI_VK_CHECK (vkEnumeratePhysicalDevices (instance->handle, &device_count, NULL));
-
-  VkPhysicalDevice* devices = alloca (sizeof *devices * device_count);
-  REI_VK_CHECK (vkEnumeratePhysicalDevices (instance->handle, &device_count, devices));
-
-  for (u32 i = 0; i < device_count; ++i) {
-    VkPhysicalDevice current = devices[i];
-
-    u32 ext_count = 0;
-    REI_VK_CHECK (vkEnumerateDeviceExtensionProperties (current, NULL, &ext_count, NULL));
-
-    VkExtensionProperties* extensions = alloca (sizeof *extensions * ext_count);
-    REI_VK_CHECK (vkEnumerateDeviceExtensionProperties (current, NULL, &ext_count, extensions));
-
-    const u32 matched_ext_count = rei_vk_check_extensions (extensions, ext_count, required_ext, required_ext_count);
-
-    u32 format_count = 0, present_mode_count = 0;
-    REI_VK_CHECK (vkGetPhysicalDeviceSurfaceFormatsKHR (current, instance->surface, &format_count, NULL));
-    REI_VK_CHECK (vkGetPhysicalDeviceSurfacePresentModesKHR (current, instance->surface, &present_mode_count, NULL));
-
-    rei_vk_queue_indices_t indices;
-    const b8 supports_swapchain = format_count && present_mode_count;
-    const b8 has_queue_families = rei_vk_find_queue_indices (current, instance->surface, &indices);
-
-    if (has_queue_families && supports_swapchain && (matched_ext_count == required_ext_count)) {
-      *out = current;
-      break;
-    }
-  }
-
-  // Make sure that chosen device supports image blitting with REI_VK_IMAGE_FORMAT.
-  VkFormatProperties props;
-  vkGetPhysicalDeviceFormatProperties (*out, REI_VK_IMAGE_FORMAT, &props);
-
-  const b32 supports_blitting = props.optimalTilingFeatures & (VK_FORMAT_FEATURE_BLIT_SRC_BIT | VK_FORMAT_FEATURE_BLIT_DST_BIT);
-
-  if (!*out && !supports_blitting) {
-    REI_LOG_STR_ERROR ("Vk initialization failure: unable to choose a suitable physical device.");
-    exit (EXIT_FAILURE);
-  }
-}
-
-void rei_vk_create_device (
-  VkPhysicalDevice physical_device,
-  VkSurfaceKHR surface,
-  const char* const* enabled_ext,
-  u32 enabled_ext_count,
-  rei_vk_device_t* out) {
-
-  rei_vk_queue_indices_t queue_indices;
-  rei_vk_find_queue_indices (physical_device, surface, &queue_indices);
+void rei_vk_create_device (const rei_vk_instance_t* instance, rei_vk_device_t* out) {
+  struct _s_queue_indices_t queue_indices;
+  _s_find_queue_indices (instance->gpu, instance->surface, &queue_indices);
 
   out->gfx_index = queue_indices.gfx;
   out->present_index = queue_indices.present;
@@ -316,6 +324,9 @@ void rei_vk_create_device (
     current->pQueuePriorities = &queue_priority;
   }
 
+  _S_REQUIRED_DEVICE_EXT (enabled_ext);
+  _S_REQUIRED_DEVICE_EXT_COUNT (enabled_ext_count);
+
   VkDeviceCreateInfo create_info = {
     .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
     .pNext = NULL,
@@ -329,7 +340,7 @@ void rei_vk_create_device (
     .pEnabledFeatures = &(VkPhysicalDeviceFeatures) {0},
   };
 
-  REI_VK_CHECK (vkCreateDevice (physical_device, &create_info, NULL, &out->handle));
+  REI_VK_CHECK (vkCreateDevice (instance->gpu, &create_info, NULL, &out->handle));
   volkLoadDevice (out->handle);
 
   // FIXME I'm not entirely sure that third argument is correct here...
@@ -337,7 +348,7 @@ void rei_vk_create_device (
   vkGetDeviceQueue (out->handle, out->present_index, 0, &out->present_queue);
 }
 
-void rei_vk_create_allocator (VkInstance instance, VkPhysicalDevice physical_device, const rei_vk_device_t* device, rei_vk_allocator_t* out) {
+void rei_vk_create_allocator (const rei_vk_instance_t* instance, const rei_vk_device_t* device, rei_vk_allocator_t* out) {
   // Provide all the function pointers VMA needs to do its stuff.
   VmaVulkanFunctions vk_function_pointers = {
     .vkMapMemory = vkMapMemory,
@@ -361,15 +372,15 @@ void rei_vk_create_allocator (VkInstance instance, VkPhysicalDevice physical_dev
 
   VmaAllocatorCreateInfo create_info = {
     .flags = 0,
-    .physicalDevice = physical_device,
+    .physicalDevice = instance->gpu,
     .device = device->handle,
     .preferredLargeHeapBlockSize = 0,
     .pAllocationCallbacks = NULL,
     .pDeviceMemoryCallbacks = NULL,
     .pHeapSizeLimit = NULL,
     .pVulkanFunctions = &vk_function_pointers,
-    .instance = instance,
-    .vulkanApiVersion = REI_VK_VERSION,
+    .instance = instance->handle,
+    .vulkanApiVersion = _S_VK_VERSION,
     .pTypeExternalMemoryHandleTypes = NULL,
   };
 
@@ -381,6 +392,13 @@ void rei_vk_create_allocator (VkInstance instance, VkPhysicalDevice physical_dev
 void rei_vk_destroy_allocator (rei_vk_allocator_t* allocator) {
   pthread_mutex_destroy (&allocator->mutex);
   vmaDestroyAllocator (allocator->vma_handle);
+}
+
+void rei_vk_flush_buffers (rei_vk_allocator_t* allocator, u32 count, rei_vk_buffer_t* buffers) {
+  VmaAllocation* allocations = alloca (sizeof *allocations * count);
+  for (u32 i = 0; i < count; ++i) allocations[i] = buffers[i].memory;
+
+  REI_VK_CHECK (vmaFlushAllocations (allocator->vma_handle, count, allocations, NULL, NULL));
 }
 
 void rei_vk_create_image (
@@ -491,19 +509,18 @@ void rei_vk_destroy_buffer (rei_vk_allocator_t* allocator, rei_vk_buffer_t* buff
 }
 
 void rei_vk_create_swapchain (
+  const rei_vk_instance_t* instance,
   const rei_vk_device_t* device,
   rei_vk_allocator_t* allocator,
   VkSwapchainKHR old,
-  VkSurfaceKHR surface,
   u32 width,
   u32 height,
-  VkPhysicalDevice physical_device,
   rei_vk_swapchain_t* out) {
 
   {
     // Choose swapchain extent
     VkSurfaceCapabilitiesKHR capabilities;
-    REI_VK_CHECK (vkGetPhysicalDeviceSurfaceCapabilitiesKHR (physical_device, surface, &capabilities));
+    REI_VK_CHECK (vkGetPhysicalDeviceSurfaceCapabilitiesKHR (instance->gpu, instance->surface, &capabilities));
 
     if (capabilities.currentExtent.width != REI_U32_MAX) {
       out->width = capabilities.currentExtent.width;
@@ -527,16 +544,16 @@ void rei_vk_create_swapchain (
       min_images_count = capabilities.maxImageCount;
 
     VkSurfaceFormatKHR surface_format;
-    _s_set_swapchain_surface_format (physical_device, surface, &surface_format);
+    _s_set_swapchain_surface_format (instance, &surface_format);
     out->format = surface_format.format;
 
     VkPresentModeKHR present_mode;
-    _s_set_swapchain_present_mode (physical_device, surface, &present_mode);
+    _s_set_swapchain_present_mode (instance, &present_mode);
 
     VkSwapchainCreateInfoKHR info = {
       .clipped = VK_TRUE,
       .presentMode = present_mode,
-      .surface = surface,
+      .surface = instance->surface,
       .oldSwapchain = old,
 
       .imageArrayLayers = 1,
@@ -573,7 +590,7 @@ void rei_vk_create_swapchain (
     VkImageViewCreateInfo info = {
       .pNext = NULL,
       .flags = 0,
-      .format = REI_VK_IMAGE_FORMAT,
+      .format = _S_IMAGE_FORMAT,
       .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
       .viewType = VK_IMAGE_VIEW_TYPE_2D,
 
@@ -600,7 +617,7 @@ void rei_vk_create_swapchain (
     .width = out->width,
     .height = out->height,
     .mip_levels = 1,
-    .format = REI_VK_DEPTH_FORMAT,
+    .format = _S_DEPTH_FORMAT,
     .usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
     .aspect_mask = VK_IMAGE_ASPECT_DEPTH_BIT,
   };
@@ -650,7 +667,7 @@ void rei_vk_create_render_pass (
 
       [1] = { // Depth attachment
         .flags = 0,
-        .format = REI_VK_DEPTH_FORMAT,
+        .format = _S_DEPTH_FORMAT,
         .samples = VK_SAMPLE_COUNT_1_BIT,
         .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
         .storeOp = VK_ATTACHMENT_STORE_OP_STORE,

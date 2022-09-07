@@ -14,11 +14,6 @@
 #include "rei_asset.h"
 #include "rei_logger.h"
 
-#define REI_VK_VERSION VK_API_VERSION_1_0
-#define REI_VK_IMAGE_FORMAT VK_FORMAT_B8G8R8A8_SRGB
-#define REI_VK_TEXTURE_FORMAT VK_FORMAT_R8G8B8A8_SRGB
-#define REI_VK_DEPTH_FORMAT VK_FORMAT_X8_D24_UNORM_PACK32
-
 #ifdef NDEBUG
 #  define REI_VK_CHECK(__call) __call
 #else
@@ -84,16 +79,13 @@ typedef struct rei_vk_image_trans_info_t {
   VkImageSubresourceRange* subresource_range;
 } rei_vk_image_trans_info_t;
 
-typedef struct rei_vk_queue_indices_t {
-  u32 gfx, present, transfer;
-} rei_vk_queue_indices_t;
-
 typedef struct rei_vk_instance_t {
   VkInstance handle;
   #ifndef NDEBUG
   VkDebugUtilsMessengerEXT dbg_messenger;
   #endif
   VkSurfaceKHR surface;
+  VkPhysicalDevice gpu;
 } rei_vk_instance_t;
 
 typedef struct rei_vk_device_t {
@@ -172,25 +164,15 @@ typedef struct rei_vk_image_ci_t {
 // Stringify VkResult for debugging purposes.
 const char* rei_vk_show_error (VkResult);
 
-u32 rei_vk_check_extensions (const VkExtensionProperties* available, u32 available_count, const char* const* required, u32 required_count);
-
 void rei_vk_create_instance_linux (xcb_connection_t* xcb_conn, u32 xcb_window, rei_vk_instance_t* out);
 void rei_vk_destroy_instance (rei_vk_instance_t* instance);
 
-b8 rei_vk_find_queue_indices (VkPhysicalDevice device, VkSurfaceKHR surface, rei_vk_queue_indices_t* out);
+void rei_vk_create_device (const rei_vk_instance_t* instance, rei_vk_device_t* out);
 
-void rei_vk_choose_gpu (const rei_vk_instance_t* instance, const char* const* required_ext, u32 required_ext_count, VkPhysicalDevice* out);
-
-void rei_vk_create_device (
-  VkPhysicalDevice physical_device,
-  VkSurfaceKHR surface,
-  const char* const* enabled_ext,
-  u32 enabled_ext_count,
-  rei_vk_device_t* out
-);
-
-void rei_vk_create_allocator (VkInstance instance, VkPhysicalDevice physical_device, const rei_vk_device_t* device, rei_vk_allocator_t* out);
+void rei_vk_create_allocator (const rei_vk_instance_t* instance, const rei_vk_device_t* device, rei_vk_allocator_t* out);
 void rei_vk_destroy_allocator (rei_vk_allocator_t* allocator);
+
+void rei_vk_flush_buffers (rei_vk_allocator_t* allocator, u32 count, rei_vk_buffer_t* buffers);
 
 void rei_vk_create_image (
   const rei_vk_device_t* device,
@@ -209,13 +191,12 @@ void rei_vk_unmap_buffer (rei_vk_allocator_t* allocator, rei_vk_buffer_t* buffer
 void rei_vk_destroy_buffer (rei_vk_allocator_t* allocator, rei_vk_buffer_t* buffer);
 
 void rei_vk_create_swapchain (
+  const rei_vk_instance_t* instance,
   const rei_vk_device_t* device,
   rei_vk_allocator_t* allocator,
   VkSwapchainKHR old,
-  VkSurfaceKHR surface,
   u32 width,
   u32 height,
-  VkPhysicalDevice physical_device,
   rei_vk_swapchain_t* out
 );
 

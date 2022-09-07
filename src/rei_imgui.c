@@ -3,7 +3,7 @@
 #include "rei_imgui.h"
 #include "rei_window.h"
 
-void rei_create_imgui_ctxt (
+void rei_imgui_create_ctxt (
   const rei_vk_device_t* vk_device,
   rei_vk_allocator_t* vk_allocator,
   const rei_vk_imm_ctxt_t* vk_imm_ctxt,
@@ -31,20 +31,20 @@ void rei_create_imgui_ctxt (
   style->ScrollbarRounding = 0.f;
   style->Colors[ImGuiCol_WindowBg].w = 1.f;
 
-  #define __SET_BLACK_COLOR(__color) \
+  #define _S_SET_BLACK_COLOR(__color) \
     style->Colors[__color].x = 0.f;  \
     style->Colors[__color].y = 0.f;  \
     style->Colors[__color].z = 0.f;  \
     style->Colors[__color].w = 1.f
 
-  __SET_BLACK_COLOR (ImGuiCol_TitleBg);
-  __SET_BLACK_COLOR (ImGuiCol_ScrollbarBg);
-  __SET_BLACK_COLOR (ImGuiCol_TitleBgActive);
+  _S_SET_BLACK_COLOR (ImGuiCol_TitleBg);
+  _S_SET_BLACK_COLOR (ImGuiCol_ScrollbarBg);
+  _S_SET_BLACK_COLOR (ImGuiCol_TitleBgActive);
 
-  #undef __SET_BLACK_COLOR
+  #undef _S_SET_BLACK_COLOR
 }
 
-void rei_destroy_imgui_ctxt (const rei_vk_device_t* vk_device, rei_vk_allocator_t* vk_allocator, rei_imgui_ctxt_t* ctxt) {
+void rei_imgui_destroy_ctxt (const rei_vk_device_t* vk_device, rei_vk_allocator_t* vk_allocator, rei_imgui_ctxt_t* ctxt) {
   rei_vk_destroy_image (vk_device, vk_allocator, &ctxt->font_texture);
 
   igDestroyContext (ctxt->handle);
@@ -229,9 +229,9 @@ void rei_imgui_handle_events (ImGuiIO* io, const rei_xcb_window_t* window, const
       switch (((xcb_button_press_event_t*) event)->detail) {
         case REI_X11_MOUSE_LEFT: io->MouseDown[0] = REI_TRUE; return;
         case REI_X11_MOUSE_RIGHT: io->MouseDown[1] = REI_TRUE; return;
-	case REI_X11_MOUSE_WHEEL_UP: io->MouseWheel = 1.f; return;
-	case REI_X11_MOUSE_WHEEL_DOWN: io->MouseWheel = -1.f; return;
-	default: return;
+	      case REI_X11_MOUSE_WHEEL_UP: io->MouseWheel = 1.f; return;
+	      case REI_X11_MOUSE_WHEEL_DOWN: io->MouseWheel = -1.f; return;
+	      default: return;
       }
     } break;
 
@@ -239,7 +239,7 @@ void rei_imgui_handle_events (ImGuiIO* io, const rei_xcb_window_t* window, const
       switch (((xcb_button_press_event_t*) event)->detail) {
         case REI_X11_MOUSE_LEFT: io->MouseDown[0] = REI_FALSE; return;
         case REI_X11_MOUSE_RIGHT: io->MouseDown[1] = REI_FALSE; return;
-	default: return;
+	      default: return;
       }
     } break;
   }
@@ -290,13 +290,7 @@ void rei_imgui_update_buffers (
     indices += idx_buffer_size;
   }
 
-  REI_VK_CHECK (vmaFlushAllocations (
-    vk_allocator,
-    2,
-    (VmaAllocation[]) {vtx_buffer->memory, idx_buffer->memory},
-    (VkDeviceSize[]) {0, 0},
-    (VkDeviceSize[]) {vtx_buffer->size, idx_buffer->size}
-  ));
+  rei_vk_flush_buffers (vk_allocator, 2, frame_data->buffers[frame_index]);
 }
 
 void rei_imgui_draw_cmd (VkCommandBuffer vk_cmd_buffer, const rei_imgui_frame_data_t* frame_data, const ImDrawData* draw_data, u32 frame_index) {
@@ -318,10 +312,10 @@ void rei_imgui_draw_cmd (VkCommandBuffer vk_cmd_buffer, const rei_imgui_frame_da
     for (s32 j = 0; j < cmd_list->CmdBuffer.Size; ++j) {
       const ImDrawCmd* draw_cmd = &cmd_list->CmdBuffer.Data[j];
       const VkRect2D scissor = {
-	.offset.x = REI_MAX ((s32) draw_cmd->ClipRect.x, 0),
-	.offset.y = REI_MAX ((s32) draw_cmd->ClipRect.y, 0),
-	.extent.width = (u32) (draw_cmd->ClipRect.z - draw_cmd->ClipRect.x),
-	.extent.height = (u32) (draw_cmd->ClipRect.w - draw_cmd->ClipRect.y)
+	      .offset.x = REI_MAX ((s32) draw_cmd->ClipRect.x, 0),
+	      .offset.y = REI_MAX ((s32) draw_cmd->ClipRect.y, 0),
+	      .extent.width = (u32) (draw_cmd->ClipRect.z - draw_cmd->ClipRect.x),
+	      .extent.height = (u32) (draw_cmd->ClipRect.w - draw_cmd->ClipRect.y)
       };
 
       vkCmdSetScissor (vk_cmd_buffer, 0, 1, &scissor);

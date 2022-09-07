@@ -33,14 +33,14 @@ typedef struct {
   ImGuiContext* handle;
 } rei_imgui_ctxt_t;
 
-void rei_create_imgui_ctxt (
+void rei_imgui_create_ctxt (
   const rei_vk_device_t* vk_device,
   rei_vk_allocator_t* vk_allocator,
   const rei_vk_imm_ctxt_t* vk_imm_ctxt,
   rei_imgui_ctxt_t* out
 );
 
-void rei_destroy_imgui_ctxt (const rei_vk_device_t* vk_device, rei_vk_allocator_t* vk_allocator, rei_imgui_ctxt_t* ctxt);
+void rei_imgui_destroy_ctxt (const rei_vk_device_t* vk_device, rei_vk_allocator_t* vk_allocator, rei_imgui_ctxt_t* ctxt);
 
 void rei_imgui_create_frame_data (
   const rei_vk_device_t* vk_device,
