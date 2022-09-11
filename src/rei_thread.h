@@ -20,6 +20,7 @@ typedef struct rei_thread_pool_t {
 
   pthread_cond_t* has_work_cond;
   pthread_cond_t* no_work_cond;
+  u64 thread_count;
   u32 work_thread_count;
   b32 has_to_quit;
 } rei_thread_pool_t;

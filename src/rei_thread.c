@@ -2,6 +2,7 @@
 #include <memory.h>
 #include <pthread.h>
 
+#include "rei_debug.h"
 #include "rei_thread.h"
 
 static void* _s_thread_routine (void* arg) {
@@ -54,6 +55,9 @@ void rei_thread_pool_create (rei_thread_pool_t* out) {
   out->work_thread_count = 0;
   out->has_to_quit = REI_FALSE;
   const s64 thread_count = sysconf (_SC_NPROCESSORS_ONLN) * 2;
+  REI_ASSERT (thread_count);
+
+  out->thread_count = (u64) thread_count;
 
   pthread_t thread;
 
