@@ -15,7 +15,7 @@
 
 #include <lz4/lib/lz4.h>
 
-#define REI_RTEXTURE_JSON_MAX_SIZE 128u
+#define _S_RTEXTURE_JSON_MAX_SIZE 128u
 
 rei_result_e rei_texture_compress (const char* const relative_path) {
   rei_image_t src_image;
@@ -52,7 +52,7 @@ rei_result_e rei_texture_compress (const char* const relative_path) {
   }
 
   // Create JSON metadata.
-  char json_metadata[REI_RTEXTURE_JSON_MAX_SIZE] = {0};
+  char json_metadata[_S_RTEXTURE_JSON_MAX_SIZE] = {0};
   char json_metadata_fmt[] = "{\"width\":%u,\"height\":%u,\"component_count\":%u,\"compressed_size\":%u}";
 
   sprintf (json_metadata, json_metadata_fmt, src_image.width, src_image.height, src_image.component_count, compressed_size);
@@ -95,45 +95,46 @@ rei_result_e rei_compress_texture_dir (const char* const relative_path) {
 }
 
 rei_result_e rei_texture_load (const char* const relative_path, rei_texture_t* out) {
-  rei_file_t file;
-  REI_CHECK (rei_map_file (relative_path, &file));
+  // Make sure that we are dealing with an RTEX file.
+  REI_ASSERT (!strcmp (strrchr (relative_path, '.'), ".rtex"));
 
-  const char* file_data = file.data;
+  REI_CHECK (rei_map_file (relative_path, &out->mapped_file));
+  const char* file_data = out->mapped_file.data;
 
-  { // Parse JSON metadata.
-    const u32 json_size = *((const u32*) file_data);
-    file_data += sizeof (u32);
+  // Parse JSON metadata.
+  const u32 json_size = *((const u32*) file_data);
+  file_data += sizeof (u32);
 
-    char json[REI_RTEXTURE_JSON_MAX_SIZE];
-    memcpy (json, file_data, json_size);
-    json[json_size] = '\0';
+  char json[_S_RTEXTURE_JSON_MAX_SIZE];
+  memcpy (json, file_data, json_size);
+  json[json_size] = '\0';
 
-    rei_json_state_t json_state;
-    REI_CHECK (rei_json_tokenize (json, json_size, &json_state));
+  rei_json_state_t json_state;
+  REI_CHECK (rei_json_tokenize (json, json_size, &json_state));
 
-    const jsmntok_t* root_token = json_state.current_token++;
-    REI_ASSERT (root_token->type == JSMN_OBJECT);
+  const jsmntok_t* root_token = json_state.current_token++;
+  REI_ASSERT (root_token->type == JSMN_OBJECT);
 
-    for (s32 i = 0; i < root_token->size; ++i) {
-      if (rei_json_string_eq (&json_state, "width", 5)) {
-        rei_json_parse_u32 (&json_state, &out->width);
-      } else if (rei_json_string_eq (&json_state, "height", 6)) {
-        rei_json_parse_u32 (&json_state, &out->height);
-      } else if (rei_json_string_eq (&json_state, "component_count", 15)) {
-        rei_json_parse_u32 (&json_state, &out->component_count);
-      } else if (rei_json_string_eq (&json_state, "compressed_size", 15)) {
-        rei_json_parse_u32 (&json_state, &out->compressed_size);
-      }
+  for (s32 i = 0; i < root_token->size; ++i) {
+    if (rei_json_string_eq (&json_state, "width", 5)) {
+      rei_json_parse_u32 (&json_state, &out->width);
+    } else if (rei_json_string_eq (&json_state, "height", 6)) {
+      rei_json_parse_u32 (&json_state, &out->height);
+    } else if (rei_json_string_eq (&json_state, "component_count", 15)) {
+      rei_json_parse_u32 (&json_state, &out->component_count);
+    } else if (rei_json_string_eq (&json_state, "compressed_size", 15)) {
+      rei_json_parse_u32 (&json_state, &out->compressed_size);
     }
-
-    free (json_state.json_tokens);
-
-    file_data += json_size;
   }
 
-  out->compressed_data = malloc (out->compressed_size);
-  memcpy (out->compressed_data, file_data, out->compressed_size);
+  free (json_state.json_tokens);
+  file_data += json_size;
 
-  rei_unmap_file (&file);
+  out->compressed_data = file_data;
+
   return REI_RESULT_SUCCESS;
+}
+
+void rei_texture_destroy (rei_texture_t* texture) {
+  rei_unmap_file (&texture->mapped_file);
 }
