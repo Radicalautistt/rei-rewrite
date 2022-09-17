@@ -128,7 +128,8 @@ typedef struct rei_gltf_primitive_t {
 } rei_gltf_primitive_t;
 
 typedef struct rei_gltf_mesh_t {
-  u64 primitive_count;
+  u32 primitive_count;
+  u32 __padding;
   rei_gltf_primitive_t* primitives;
 } rei_gltf_mesh_t;
 

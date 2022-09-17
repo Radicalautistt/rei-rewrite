@@ -50,7 +50,7 @@ static void _s_load_textures (
   const char* const model_path,
   const rei_gltf_t* const gltf,
   const rei_vk_device_t* vk_device,
-  VmaAllocator vk_allocator,
+  rei_vk_allocator_t* vk_allocator,
   const rei_vk_imm_ctxt_t* vk_imm_ctxt,
   rei_model_t* out) {
 
@@ -81,7 +81,7 @@ static void _s_load_textures (
     }
 
     rei_vk_create_texture_cmd (vk_device, vk_allocator, vk_cmd_buffer, &staging_buffers[i], &new_texture, &out->textures[i]);
-    free (new_texture.compressed_data);
+    rei_texture_destroy (&new_texture);
   }
 
   rei_vk_end_imm_cmd (vk_device, vk_imm_ctxt, vk_cmd_buffer);
@@ -93,7 +93,7 @@ static void _s_load_textures (
 void rei_model_create (
   const char* relative_path,
   const rei_vk_device_t* vk_device,
-  VmaAllocator vk_allocator,
+  rei_vk_allocator_t* vk_allocator,
   const rei_vk_imm_ctxt_t* vk_imm_ctxt,
   VkSampler vk_sampler,
   VkDescriptorSetLayout vk_descriptor_layout,
@@ -101,26 +101,27 @@ void rei_model_create (
 
   rei_gltf_t gltf;
   REI_CHECK (rei_gltf_load (relative_path, &gltf));
+  REI_LOG_WARN ("%lu", gltf.meshes[0].primitive_count);
 
   { // Create vertex and index buffers.
 
     // Merge all primitives into a single array.
-    u64 primitive_count = 0;
+    u32 primitive_count = 0;
     for (u32 i = 0; i < gltf.mesh_count; ++i) primitive_count += gltf.meshes[i].primitive_count;
 
-    u64 primitive_offset = 0;
+    u32 primitive_offset = 0;
     rei_gltf_primitive_t* sorted_primitives = malloc (sizeof *sorted_primitives * primitive_count);
 
     for (u32 i = 0; i < gltf.mesh_count; ++i) {
       const rei_gltf_mesh_t* current_mesh = &gltf.meshes[i];
 
-      const u64 current_size = sizeof (rei_gltf_primitive_t) * current_mesh->primitive_count;
+      const u32 current_size = sizeof (rei_gltf_primitive_t) * current_mesh->primitive_count;
       memcpy (sorted_primitives + primitive_offset, current_mesh->primitives, current_size);
 
       primitive_offset += current_size;
     }
 
-    _s_sort_gltf_primitives (sorted_primitives, 0, (u32) primitive_count - 1);
+    _s_sort_gltf_primitives (sorted_primitives, 0, primitive_count - 1);
 
     u32 vtx_count = 0;
     u32 idx_count = 0;
@@ -138,8 +139,7 @@ void rei_model_create (
     const u64 idx_buffer_size = sizeof (u32) * idx_count;
 
     rei_vk_buffer_t staging_buffer;
-    REI_VK_CREATE_STAGING_BUFFER (vk_allocator, vtx_buffer_size + idx_buffer_size, &staging_buffer);
-
+    rei_vk_create_buffer (vk_allocator, vtx_buffer_size + idx_buffer_size, REI_VK_BUFFER_TYPE_STAGING, &staging_buffer);
     rei_vk_map_buffer (vk_allocator, &staging_buffer);
 
     rei_vertex_t* vertices = (rei_vertex_t*) staging_buffer.mapped;
@@ -191,14 +191,14 @@ void rei_model_create (
         current_batch.idx_count += current_index_count;
       } else {
         out->batches->first_indices[batch_offset] = current_batch.first_index;
-	out->batches->idx_counts[batch_offset] = current_batch.idx_count;
-	out->batches->material_indices[batch_offset] = current_batch.material_index;
+	      out->batches->idx_counts[batch_offset] = current_batch.idx_count;
+	      out->batches->material_indices[batch_offset] = current_batch.material_index;
 
-	++batch_offset;
+	      ++batch_offset;
 
-	current_batch.first_index = idx_offset;
-	current_batch.idx_count = current_index_count;
-	current_batch.material_index = current_primitive->material_index;
+	      current_batch.first_index = idx_offset;
+	      current_batch.idx_count = current_index_count;
+	      current_batch.material_index = current_primitive->material_index;
       }
 
       for (u32 k = 0; k < current_index_count; ++k) {
@@ -215,8 +215,8 @@ void rei_model_create (
 
     out->buffers = malloc (sizeof *out->buffers);
 
-    REI_VK_CREATE_GPU_BUFFER (vk_allocator, vtx_buffer_size, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, &out->buffers->vtx);
-    REI_VK_CREATE_GPU_BUFFER (vk_allocator, idx_buffer_size, VK_BUFFER_USAGE_INDEX_BUFFER_BIT, &out->buffers->idx);
+    rei_vk_create_buffer (vk_allocator, vtx_buffer_size, REI_VK_BUFFER_TYPE_VTX_CONST, &out->buffers->vtx);
+    rei_vk_create_buffer (vk_allocator, idx_buffer_size, REI_VK_BUFFER_TYPE_IDX_CONST, &out->buffers->idx);
 
     VkCommandBuffer cmd_buffer;
     rei_vk_start_imm_cmd (vk_device, vk_imm_ctxt, &cmd_buffer);
@@ -286,7 +286,7 @@ void rei_model_draw_cmd (
   }
 }
 
-void rei_model_destroy (const rei_vk_device_t* vk_device, VmaAllocator vk_allocator, rei_model_t* model) {
+void rei_model_destroy (const rei_vk_device_t* vk_device, rei_vk_allocator_t* vk_allocator, rei_model_t* model) {
   free (model->model_matrix);
 
   free (model->batches->first_indices);

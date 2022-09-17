@@ -578,6 +578,8 @@ static void _s_gltf_parse_meshes (rei_json_state_t* state, rei_gltf_t* out) {
         rei_json_skip (state);
       }
     }
+
+    REI_ASSERT (new_mesh->primitive_count);
   }
 }
 

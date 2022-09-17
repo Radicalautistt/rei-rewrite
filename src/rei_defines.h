@@ -10,6 +10,7 @@
 #define REI_CLAMP(__value, __min, __max) (REI_MAX (__min, REI_MIN (__value, __max)))
 #define REI_OFFSET_OF(__struct, __member) ((size_t) &(((__struct*) NULL)->__member))
 
+#define REI_CONST __attribute__ ((const))
 #define REI_FORCE_INLINE __attribute__ ((always_inline))
 #define REI_ALIGN_AS(__value) __attribute__ ((aligned (__value)))
 

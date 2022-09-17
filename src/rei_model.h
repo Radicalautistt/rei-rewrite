@@ -25,7 +25,7 @@ typedef struct rei_model_t {
 void rei_model_create (
   const char* relative_path,
   const rei_vk_device_t* vk_device,
-  VmaAllocator vk_allocator,
+  rei_vk_allocator_t* vk_allocator,
   const rei_vk_imm_ctxt_t* vk_imm_ctxt,
   VkSampler vk_sampler,
   VkDescriptorSetLayout vk_descriptor_layout,
@@ -39,6 +39,6 @@ void rei_model_draw_cmd (
   const rei_mat4_t* view_projection
 );
 
-void rei_model_destroy (const rei_vk_device_t* vk_device, VmaAllocator vk_allocator, rei_model_t* model);
+void rei_model_destroy (const rei_vk_device_t* vk_device, rei_vk_allocator_t* vk_allocator, rei_model_t* model);
 
 #endif /* REI_MODEL_H */
