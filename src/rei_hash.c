@@ -1,7 +1,7 @@
 #include "rei_hash.h"
 
 // Basically a stolen sample implementation from wikipedia (I have no idea what it's doing).
-u32 rei_murmur_hash (const u8* key, u64 length, u32 seed) {
+REI_CONST u32 rei_murmur_hash (const u8* key, u64 length, u32 seed) {
   const u32 c1 = 0xcc9e2d51;
   const u32 c2 = 0x1b873593;
   const u32 r1 = 15;
