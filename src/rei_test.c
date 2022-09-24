@@ -10,7 +10,6 @@
 #include "rei_asset_loaders.h"
 
 #include <xcb/xcb.h>
-#include <VulkanMemoryAllocator/include/vk_mem_alloc.h>
 
 static void _s_create_model_gfx_pipeline (
   const rei_vk_device_t* vk_device,
@@ -155,9 +154,8 @@ int main (void) {
   rei_vk_instance_t vk_instance;
 
   rei_xcb_window_t window;
-  VkPhysicalDevice vk_physical_device = VK_NULL_HANDLE;
   rei_vk_device_t vk_device;
-  VmaAllocator vk_allocator;
+  rei_vk_allocator_t vk_allocator;
 
   rei_vk_swapchain_t vk_swapchain;
   rei_vk_render_pass_t vk_render_pass;
@@ -193,28 +191,10 @@ int main (void) {
   REI_VK_CHECK (volkInitialize ());
 
   rei_vk_create_instance_linux (window.conn, window.handle, &vk_instance);
+  rei_vk_create_device (&vk_instance, &vk_device);
+  rei_vk_create_allocator (&vk_instance, &vk_device, &vk_allocator);
 
-  { // Choose physical device and create logical one.
-    const char* const required_extensions[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
-    const u32 required_extension_count = (const u32) REI_ARRAY_SIZE (required_extensions);
-
-    rei_vk_choose_gpu (&vk_instance, required_extensions, required_extension_count, &vk_physical_device);
-    rei_vk_create_device (vk_physical_device, vk_instance.surface, required_extensions, required_extension_count, &vk_device);
-  }
-
-  rei_vk_create_allocator (vk_instance.handle, vk_physical_device, &vk_device, &vk_allocator);
-
-  rei_vk_create_swapchain (
-    &vk_device,
-    vk_allocator,
-    VK_NULL_HANDLE,
-    vk_instance.surface,
-    window.width,
-    window.height,
-    vk_physical_device,
-    &vk_swapchain
-  );
-
+  rei_vk_create_swapchain (&vk_instance, &vk_device, &vk_allocator, VK_NULL_HANDLE, window.width, window.height, &vk_swapchain);
   rei_vk_create_render_pass (&vk_device, &vk_swapchain, &(const rei_vec4_u) {.x = 1.f, .y = 1.f, .z = 0.f, .w = 1.f}, &vk_render_pass);
 
   // Create one command pool and frame data (sync structures, cmd buffers) for every frame in flight.
@@ -270,17 +250,17 @@ int main (void) {
 
   _s_create_model_gfx_pipeline (&vk_device, &vk_render_pass, &vk_swapchain, default_pipeline_layout, &default_pipeline);
 
-  rei_model_create ("assets/sponza/Sponza.gltf", &vk_device, vk_allocator, &imm_ctxt, default_sampler, default_desc_layout, &test_model);
+  rei_model_create ("assets/sponza/Sponza.gltf", &vk_device, &vk_allocator, &imm_ctxt, default_sampler, default_desc_layout, &test_model);
 
   rei_camera_create (0.f, 1.f, 0.f, -90.f, 0.f, &camera);
 
   rei_camera_position_t camera_position = {.data = {.x = 0.f, .y = 1.f, .z = 60.f}};
   camera_projection = rei_camera_create_projection ((f32) (vk_swapchain.width / vk_swapchain.height));
 
-  rei_create_imgui_ctxt (&vk_device, vk_allocator, &imm_ctxt, &imgui_ctxt);
+  rei_imgui_create_ctxt (&vk_device, &vk_allocator, &imm_ctxt, &imgui_ctxt);
   rei_imgui_create_frame_data (
     &vk_device,
-    vk_allocator,
+    &vk_allocator,
     &vk_render_pass,
     main_desc_pool,
     default_desc_layout,
@@ -294,7 +274,6 @@ int main (void) {
 #endif
   const f32 delta_time = 1.f / 60.f;
 
-#if 0
   for (;;) {
     ImGuiIO* imgui_io = igGetIO ();
     imgui_io->DeltaTime = delta_time;
@@ -334,14 +313,13 @@ int main (void) {
     igRender ();
 
     const ImDrawData* imgui_data = igGetDrawData ();
-    rei_imgui_update_buffers (vk_allocator, &imgui_frame_data, imgui_data, frame_index);
+    rei_imgui_update_buffers (&vk_allocator, &imgui_frame_data, imgui_data, frame_index);
 
     rei_imgui_draw_cmd (vk_cmd_buffer, &imgui_frame_data, imgui_data, frame_index);
 
     rei_vk_end_frame (&vk_device, vk_current_frame, &vk_swapchain, vk_image_index);
     ++frame_index;
   }
-#endif
 
 RESOURCE_CLEANUP_L:
   vkDeviceWaitIdle (vk_device.handle);
@@ -351,10 +329,10 @@ RESOURCE_CLEANUP_L:
 #if 0
   rei_destroy_openal_ctxt (&openal_ctxt);
 #endif
-  rei_imgui_destroy_frame_data (&vk_device, vk_allocator, &imgui_frame_data);
-  rei_destroy_imgui_ctxt (&vk_device, vk_allocator, &imgui_ctxt);
+  rei_imgui_destroy_frame_data (&vk_device, &vk_allocator, &imgui_frame_data);
+  rei_imgui_destroy_ctxt (&vk_device, &vk_allocator, &imgui_ctxt);
 
-  rei_model_destroy (&vk_device, vk_allocator, &test_model);
+  rei_model_destroy (&vk_device, &vk_allocator, &test_model);
   vkDestroyPipeline (vk_device.handle, default_pipeline, NULL);
   vkDestroyPipelineLayout (vk_device.handle, default_pipeline_layout, NULL);
   vkDestroyDescriptorPool (vk_device.handle, main_desc_pool, NULL);
@@ -369,9 +347,9 @@ RESOURCE_CLEANUP_L:
   vkDestroyCommandPool (vk_device.handle, vk_frame_cmd_pool, NULL);
 
   rei_vk_destroy_render_pass (&vk_device, &vk_render_pass);
-  rei_vk_destroy_swapchain (&vk_device, vk_allocator, &vk_swapchain);
+  rei_vk_destroy_swapchain (&vk_device, &vk_allocator, &vk_swapchain);
 
-  vmaDestroyAllocator (vk_allocator);
+  rei_vk_destroy_allocator (&vk_allocator);
   vkDestroyDevice (vk_device.handle, NULL);
 
   rei_vk_destroy_instance (&vk_instance);
