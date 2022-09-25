@@ -901,6 +901,49 @@ void rei_vk_create_pipeline_layout (
   REI_VK_CHECK (vkCreatePipelineLayout (device->handle, &create_info, NULL, out));
 }
 
+void rei_vk_create_pipeline_cache (const rei_vk_device_t* device, const char* relative_path, VkPipelineCache* out) {
+  u64 cache_size = 0;
+  void* cache_data = NULL;
+
+  rei_file_t cache_file;
+  switch (rei_read_file (relative_path, &cache_file)) {
+    case REI_RESULT_SUCCESS:
+      REI_LOG_INFO ("Reusing pipeline cache from %s...", relative_path);
+      cache_size = cache_file.size;
+      cache_data = cache_file.data;
+      break;
+
+    case REI_RESULT_FILE_DOES_NOT_EXIST:
+      REI_LOG_WARN ("Failed to obtain pipeline cache data from %s, creating one from scratch.", relative_path);
+      break;
+
+    default: break;
+  }
+
+  const VkPipelineCacheCreateInfo create_info = {
+    .sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO,
+    .pNext = NULL,
+    .flags = 0,
+    .initialDataSize = cache_size,
+    .pInitialData = cache_data
+  };
+
+  REI_VK_CHECK (vkCreatePipelineCache (device->handle, &create_info, NULL, out));
+  rei_free_file (&cache_file);
+}
+
+void rei_vk_destroy_pipeline_cache (const rei_vk_device_t* device, VkPipelineCache cache, const char* out_relative_path) {
+  u64 cache_size = 0;
+  REI_VK_CHECK (vkGetPipelineCacheData (device->handle, cache, &cache_size, NULL));
+
+  // TODO Add a proper check for file size or something, cause I might get stack overflow in case it's too big.
+  void* cache_data = alloca (cache_size);
+  REI_VK_CHECK (vkGetPipelineCacheData (device->handle, cache, &cache_size, cache_data));
+
+  rei_write_file (out_relative_path, cache_data, cache_size);
+  vkDestroyPipelineCache (device->handle, cache, NULL);
+}
+
 void rei_vk_create_gfx_pipeline (const rei_vk_device_t* device, const rei_vk_gfx_pipeline_ci_t* create_info, VkPipeline* out) {
   VkPipelineInputAssemblyStateCreateInfo input_assembly_state = {
     .pNext = NULL,

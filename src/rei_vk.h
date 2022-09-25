@@ -243,6 +243,8 @@ void rei_vk_create_pipeline_layout (
   VkPipelineLayout* out
 );
 
+void rei_vk_create_pipeline_cache (const rei_vk_device_t* device, const char* relative_path, VkPipelineCache* out);
+void rei_vk_destroy_pipeline_cache (const rei_vk_device_t* device, VkPipelineCache cache, const char* out_relative_path);
 void rei_vk_create_gfx_pipeline (const rei_vk_device_t* device, const rei_vk_gfx_pipeline_ci_t* create_info, VkPipeline* out);
 
 void rei_vk_create_imm_ctxt (const rei_vk_device_t* device, u32 queue_index, rei_vk_imm_ctxt_t* out);
