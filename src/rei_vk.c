@@ -866,7 +866,7 @@ void rei_vk_destroy_frame_data (const rei_vk_device_t* device, rei_vk_frame_data
 
 void rei_vk_create_shader_module (const rei_vk_device_t* device, const char* relative_path, VkShaderModule* out) {
   rei_file_t shader_code;
-  REI_CHECK (rei_map_file (relative_path, &shader_code));
+  REI_CHECK (rei_read_file (relative_path, &shader_code));
 
   VkShaderModuleCreateInfo create_info = {
     .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
@@ -877,7 +877,7 @@ void rei_vk_create_shader_module (const rei_vk_device_t* device, const char* rel
   };
 
   REI_VK_CHECK (vkCreateShaderModule (device->handle, &create_info, NULL, out));
-  rei_unmap_file (&shader_code);
+  rei_free_file (&shader_code);
 }
 
 void rei_vk_create_pipeline_layout (

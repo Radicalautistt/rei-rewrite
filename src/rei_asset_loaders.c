@@ -12,7 +12,7 @@ void rei_load_wav (const char* relative_path, rei_wav_t * out) {
   REI_LOG_INFO ("Loading a sound from " REI_ANSI_YELLOW "\"%s\"", relative_path);
 
   rei_file_t file;
-  REI_CHECK (rei_map_file (relative_path, &file));
+  REI_CHECK (rei_read_file (relative_path, &file));
 
   u8* data = file.data;
   // Skip all the stuff that I don't care about at the moment.
@@ -33,7 +33,7 @@ void rei_load_wav (const char* relative_path, rei_wav_t * out) {
   out->data = malloc ((u64) out->size);
   memcpy (out->data, data, (u64) out->size);
 
-  rei_unmap_file (&file);
+  rei_free_file (&file);
 }
 
 // Custom png read function.
@@ -47,7 +47,7 @@ void rei_load_png (const char* relative_path, rei_image_t* out) {
   REI_LOG_INFO ("Loading an image from " REI_ANSI_YELLOW "\"%s\"", relative_path);
 
   rei_file_t png_file;
-  REI_CHECK (rei_map_file (relative_path, &png_file));
+  REI_CHECK (rei_read_file (relative_path, &png_file));
 
   // Make sure that provided image is a valid PNG.
   REI_ASSERT (!png_sig_cmp (png_file.data, 0, 8));
@@ -60,7 +60,7 @@ void rei_load_png (const char* relative_path, rei_image_t* out) {
   png_set_sig_bytes (png_reader, 8);
 
   png_read_png (png_reader, png_info, 0, NULL);
-  rei_unmap_file (&png_file);
+  rei_free_file (&png_file);
 
   png_get_IHDR (png_reader, png_info, &out->width, &out->height, NULL, NULL, NULL, NULL, NULL);
 
@@ -87,7 +87,7 @@ void rei_load_jpeg (const char* relative_path, rei_image_t* out) {
 
   jpeg_create_decompress (&decomp_info);
 
-  // TODO find a way to use rei_map_file instead of stdio.
+  // TODO find a way to use rei_read_file instead of stdio.
   FILE* image_file = fopen (relative_path, "rb");
   if (!image_file) {
     fprintf (stderr, "Failed to open \"%s\". No such file.\n", relative_path);
@@ -119,7 +119,7 @@ void rei_load_jpeg (const char* relative_path, rei_image_t* out) {
 
 void rei_load_font (const char* const relative_path, rei_font_t* out) {
   rei_file_t xml_file;
-  REI_CHECK (rei_map_file (relative_path, &xml_file));
+  REI_CHECK (rei_read_file (relative_path, &xml_file));
 
   const char* xml_data = (const char*) xml_file.data;
 
@@ -152,10 +152,9 @@ void rei_load_font (const char* const relative_path, rei_font_t* out) {
         case YXML_ATTRVAL: attr_value[attr_value_offset++] = *xml_state->data; break;
         case YXML_ATTREND:
           if (!strcmp (xml_state->attr, "size")) rei_parse_u32 (attr_value, &out->size);
-
-	  attr_value_offset = 0;
-	  memset (attr_value, 0, 32);
-	  break;
+	          attr_value_offset = 0;
+	          memset (attr_value, 0, 32);
+	          break;
 
         default: break;
       }
@@ -167,17 +166,17 @@ void rei_load_font (const char* const relative_path, rei_font_t* out) {
         case YXML_ATTRVAL: attr_value[attr_value_offset++] = *xml_state->data; break;
         case YXML_ATTREND:
           if (!strcmp (xml_state->attr, "file")) {
-	    out->atlas_path = malloc (strlen (relative_path) + strlen (attr_value) + 1);
-	    const char* slash1 = strrchr (relative_path, '/');
-	    strncpy (out->atlas_path, relative_path, (slash1 + 1) - relative_path);
+	          out->atlas_path = malloc (strlen (relative_path) + strlen (attr_value) + 1);
+	          const char* slash1 = strrchr (relative_path, '/');
+	          strncpy (out->atlas_path, relative_path, (slash1 + 1) - relative_path);
 
-	    char* slash2 = strrchr (out->atlas_path, '/');
-	    strcpy (slash2 + 1, attr_value);
+	          char* slash2 = strrchr (out->atlas_path, '/');
+	          strcpy (slash2 + 1, attr_value);
           }
 
-	  attr_value_offset = 0;
-	  memset (attr_value, 0, 32);
-	  break;
+	        attr_value_offset = 0;
+	        memset (attr_value, 0, 32);
+	        break;
 
         default: break;
       }
@@ -193,13 +192,13 @@ void rei_load_font (const char* const relative_path, rei_font_t* out) {
           break;
 
         case YXML_ATTREND:
-	  if (!strcmp (xml_state->attr, "count")) {
-	    rei_parse_u32 (attr_value, &out->symbol_count);
-	    out->symbols = malloc (sizeof *out->symbols * out->symbol_count);
-	  }
+	        if (!strcmp (xml_state->attr, "count")) {
+	          rei_parse_u32 (attr_value, &out->symbol_count);
+	          out->symbols = malloc (sizeof *out->symbols * out->symbol_count);
+	        }
 
-	  attr_value_offset = 0;
-	  memset (attr_value, 0, 32);
+	        attr_value_offset = 0;
+	        memset (attr_value, 0, 32);
           break;
 
         default: break;
@@ -210,8 +209,8 @@ void rei_load_font (const char* const relative_path, rei_font_t* out) {
           current_symb = &out->symbols[symb_offset++];
           break;
 
-	case YXML_ATTRSTART:
-	  break;
+	      case YXML_ATTRSTART:
+	        break;
 
         case YXML_ATTRVAL:
           attr_value[attr_value_offset++] = *xml_state->data;
@@ -261,7 +260,7 @@ void rei_load_font (const char* const relative_path, rei_font_t* out) {
 
   free (xml_state);
 
-  rei_unmap_file (&xml_file);
+  rei_free_file (&xml_file);
 }
 
 void rei_destroy_font (rei_font_t* font) {
@@ -309,17 +308,17 @@ static void _s_gltf_parse_buffers (const char* const gltf_path, rei_json_state_t
         rei_json_skip (state);
       } else if (rei_json_string_eq (state, "uri", 3)) {
         rei_string_view_t uri;
-	rei_json_parse_string (state, &uri);
+	      rei_json_parse_string (state, &uri);
 
-	char buffer_path[256] = {0};
-	char* slash_pos = strrchr (gltf_path, '/');
+	      char buffer_path[256] = {0};
+	      char* slash_pos = strrchr (gltf_path, '/');
 
-	if (slash_pos++) {
-	  strncpy (buffer_path, gltf_path, (u64) (slash_pos - gltf_path));
-          strncpy (buffer_path + strlen (buffer_path), uri.src, uri.size);
-	}
+	      if (slash_pos++) {
+	        strncpy (buffer_path, gltf_path, (u64) (slash_pos - gltf_path));
+                strncpy (buffer_path + strlen (buffer_path), uri.src, uri.size);
+	      }
 
-	REI_CHECK (rei_map_file (buffer_path, new_buffer));
+        REI_CHECK (rei_read_file (buffer_path, new_buffer));
       }
     }
   }
@@ -692,7 +691,7 @@ rei_result_e rei_gltf_load (const char* relative_path, rei_gltf_t* out) {
   REI_LOG_INFO ("Loading GLTF model from " REI_ANSI_YELLOW "\"%s\"", relative_path);
 
   rei_file_t gltf;
-  REI_CHECK (rei_map_file (relative_path, &gltf));
+  REI_CHECK (rei_read_file (relative_path, &gltf));
 
   rei_json_state_t json_state;
   REI_CHECK (rei_json_tokenize ((const char*) gltf.data, gltf.size, &json_state));
@@ -732,13 +731,13 @@ rei_result_e rei_gltf_load (const char* relative_path, rei_gltf_t* out) {
   }
 
   free (json_state.json_tokens);
-  rei_unmap_file (&gltf);
+  rei_free_file (&gltf);
 
   return REI_RESULT_SUCCESS;
 }
 
 void rei_gltf_destroy (rei_gltf_t* gltf) {
-  for (u32 i = 0; i < gltf->buffer_count; ++i) rei_unmap_file (&gltf->buffers[i]);
+  for (u32 i = 0; i < gltf->buffer_count; ++i) rei_free_file (&gltf->buffers[i]);
   free (gltf->buffers);
 
   if (gltf->animations) {

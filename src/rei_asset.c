@@ -98,7 +98,7 @@ rei_result_e rei_texture_load (const char* const relative_path, rei_texture_t* o
   // Make sure that we are dealing with an RTEX file.
   REI_ASSERT (!strcmp (strrchr (relative_path, '.'), ".rtex"));
 
-  REI_CHECK (rei_map_file (relative_path, &out->mapped_file));
+  REI_CHECK (rei_read_file (relative_path, &out->mapped_file));
   const char* file_data = out->mapped_file.data;
 
   // Parse JSON metadata.
@@ -136,5 +136,5 @@ rei_result_e rei_texture_load (const char* const relative_path, rei_texture_t* o
 }
 
 void rei_texture_destroy (rei_texture_t* texture) {
-  rei_unmap_file (&texture->mapped_file);
+  rei_free_file (&texture->mapped_file);
 }
