@@ -491,7 +491,7 @@ void rei_vk_create_image (
   const rei_vk_image_ci_t* create_info,
   rei_vk_image_t* out) {
 
-  VkImageCreateInfo image_info = {
+  const VkImageCreateInfo image_info = {
     .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
     .pNext = NULL,
     .flags = 0,
@@ -511,11 +511,11 @@ void rei_vk_create_image (
     .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED
   };
 
-  VmaAllocationCreateInfo alloc_info = {.usage = VMA_MEMORY_USAGE_GPU_ONLY, .requiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT};
+  const VmaAllocationCreateInfo alloc_info = {.usage = VMA_MEMORY_USAGE_GPU_ONLY, .requiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT};
 
   REI_VK_CHECK (vmaCreateImage (allocator->vma_handle, &image_info, &alloc_info, &out->handle, &out->memory, NULL));
 
-  VkImageViewCreateInfo view_info = {
+  const VkImageViewCreateInfo view_info = {
     .pNext = NULL,
     .image = out->handle,
     .flags = 0,
@@ -832,7 +832,7 @@ void rei_vk_destroy_render_pass (const rei_vk_device_t* device, rei_vk_render_pa
 }
 
 void rei_vk_create_cmd_pool (const rei_vk_device_t* device, u32 queue_index, VkCommandPoolCreateFlags flags, VkCommandPool* out) {
-  VkCommandPoolCreateInfo create_info = {
+  const VkCommandPoolCreateInfo create_info = {
     .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
     .pNext = NULL,
     .flags = flags,
@@ -1129,6 +1129,95 @@ void rei_vk_create_imm_ctxt (const rei_vk_device_t* device, u32 queue_index, rei
 
   REI_VK_CHECK (vkCreateFence (device->handle, &fence_info, NULL, &out->fence));
   vkGetDeviceQueue (device->handle, queue_index, 0, &out->queue);
+}
+
+void rei_vk_create_cmd_ctxt (const rei_vk_device_t* device, u64 thread_count, u32 queue_idx, rei_vk_cmd_ctxt_t* out) {
+  // Setup command queue.
+  out->cmd_queue.head = 0;
+  out->cmd_queue.size = (u32) thread_count;
+
+  // TODO Experiment with different flags for cmd pool creation.
+  rei_vk_create_cmd_pool (device, queue_idx, VK_COMMAND_POOL_CREATE_TRANSIENT_BIT, &out->cmd_queue.pool);
+  out->cmd_queue.buffers = malloc (sizeof *out->cmd_queue.buffers * thread_count);
+
+  REI_VK_CHECK (vkAllocateCommandBuffers (
+    device->handle,
+    &(const VkCommandBufferAllocateInfo) {
+      .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+      .pNext = NULL,
+      .commandPool = out->cmd_queue.pool,
+      .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+      .commandBufferCount = (u32) thread_count
+    },
+    out->cmd_queue.buffers
+  ));
+
+  // Create fence and queue for submition of cmd buffers.
+  REI_VK_CHECK (vkCreateFence (
+    device->handle,
+    &(const VkFenceCreateInfo) {
+      .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+      .pNext = NULL,
+      .flags = 0
+    },
+    NULL,
+    &out->fence
+  ));
+
+  vkGetDeviceQueue (device->handle, queue_idx, 0, &out->queue);
+}
+
+void rei_vk_destroy_cmd_ctxt (const rei_vk_device_t* device, rei_vk_cmd_ctxt_t* ctxt) {
+  vkDestroyFence (device->handle, ctxt->fence, NULL);
+  vkDestroyCommandPool (device->handle, ctxt->cmd_queue.pool, NULL);
+
+  free (ctxt->cmd_queue.buffers);
+}
+
+void rei_vk_cmd_start (rei_vk_cmd_ctxt_t* ctxt) {
+  const VkCommandBufferBeginInfo cmd_begin_info = {
+    .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+    .pNext = NULL,
+    .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+    .pInheritanceInfo = NULL
+  };
+
+  // Wake up all cmd buffers in the cmd_queue.
+  for (u32 i = 0; i < ctxt->cmd_queue.size; ++i) REI_VK_CHECK (vkBeginCommandBuffer (ctxt->cmd_queue.buffers[i], &cmd_begin_info));
+}
+
+void rei_vk_cmd_get_current (rei_vk_cmd_ctxt_t* ctxt, VkCommandBuffer* out) {
+  if (ctxt->cmd_queue.head++ > (ctxt->cmd_queue.size - 1)) ctxt->cmd_queue.head = 0;
+  *out = ctxt->cmd_queue.buffers[ctxt->cmd_queue.head];
+}
+
+void rei_vk_cmd_end (const rei_vk_device_t* device, rei_vk_cmd_ctxt_t* ctxt) {
+  for (u32 i = 0; i < ctxt->cmd_queue.size; ++i) REI_VK_CHECK (vkEndCommandBuffer (ctxt->cmd_queue.buffers[i]));
+
+  // Submit recorded cmd buffers to the cmd queue.
+  REI_VK_CHECK (vkQueueSubmit (
+    ctxt->queue,
+    1,
+    &(const VkSubmitInfo) {
+      .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+      .pNext = NULL,
+      .waitSemaphoreCount = 0,
+      .pWaitSemaphores = NULL,
+      .pWaitDstStageMask = NULL,
+      .commandBufferCount = ctxt->cmd_queue.size,
+      .pCommandBuffers = ctxt->cmd_queue.buffers,
+      .signalSemaphoreCount = 0,
+      .pSignalSemaphores = NULL
+    },
+    ctxt->fence
+  ));
+
+  // Stall the GPU untill all the commands have been completed.
+  REI_VK_CHECK (vkWaitForFences (device->handle, 1, &ctxt->fence, VK_TRUE, ~0ull));
+
+  // Reset fence and cmd pool for further use.
+  REI_VK_CHECK (vkResetFences (device->handle, 1, &ctxt->fence));
+  REI_VK_CHECK (vkResetCommandPool (device->handle, ctxt->cmd_queue.pool, 0));
 }
 
 void rei_vk_destroy_imm_ctxt (const rei_vk_device_t* device, rei_vk_imm_ctxt_t* context) {

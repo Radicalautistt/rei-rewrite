@@ -136,6 +136,21 @@ typedef struct rei_vk_frame_data_t {
   VkSemaphore render_semaphore;
 } rei_vk_frame_data_t;
 
+// Context for creation and submition of immediate commands (ones that stall the GPU until their completion).
+// For example: texture creation, copying of buffers, etc.
+// Commands are provided in the form of a ring buffer to be recycled between available threads of rei_thread_pool_t.
+typedef struct rei_vk_cmd_ctxt_t {
+  struct {
+    u32 head;
+    u32 size;
+    VkCommandPool pool;
+    VkCommandBuffer* buffers;
+  } cmd_queue;
+
+  VkFence fence;
+  VkQueue queue;
+} rei_vk_cmd_ctxt_t;
+
 // Context for creation and submition of immediate commands (ones that stall gpu until their completion).
 typedef struct rei_vk_imm_ctxt_t {
   VkQueue queue;
@@ -241,6 +256,13 @@ void rei_vk_create_gfx_pipeline (const rei_vk_device_t* device, const rei_vk_gfx
 
 void rei_vk_create_imm_ctxt (const rei_vk_device_t* device, u32 queue_index, rei_vk_imm_ctxt_t* out);
 void rei_vk_destroy_imm_ctxt (const rei_vk_device_t* device, rei_vk_imm_ctxt_t* context);
+
+void rei_vk_create_cmd_ctxt (const rei_vk_device_t* device, u64 thread_count, u32 queue_idx, rei_vk_cmd_ctxt_t* out);
+void rei_vk_destroy_cmd_ctxt (const rei_vk_device_t* device, rei_vk_cmd_ctxt_t* ctxt);
+
+void rei_vk_cmd_start (rei_vk_cmd_ctxt_t* ctxt);
+void rei_vk_cmd_get_current (rei_vk_cmd_ctxt_t* ctxt, VkCommandBuffer* out);
+void rei_vk_cmd_end (const rei_vk_device_t* device, rei_vk_cmd_ctxt_t* ctxt);
 
 void rei_vk_start_imm_cmd (const rei_vk_device_t* device, const rei_vk_imm_ctxt_t* context, VkCommandBuffer* out);
 
