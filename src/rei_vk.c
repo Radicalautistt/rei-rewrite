@@ -9,6 +9,7 @@
 
 #include <pthread.h>
 #include <lz4/lib/lz4.h>
+#include <ktx/include/ktx.h>
 #include <VulkanMemoryAllocator/include/vk_mem_alloc.h>
 
 #define _S_VK_VERSION VK_API_VERSION_1_0
@@ -177,6 +178,89 @@ static void _s_set_swapchain_present_mode (const rei_vk_instance_t* instance, Vk
       break;
     }
   }
+}
+
+void _s_set_image_layout_cmd (
+  VkCommandBuffer cmd_buffer,
+  rei_vk_image_t* image,
+  VkImageLayout old_layout,
+  VkImageLayout new_layout,
+  VkPipelineStageFlags src_pipeline_stage,
+  VkPipelineStageFlags dst_pipeline_stage,
+  u32 mip_lvl_count,
+  u32 current_mip_lvl) {
+
+  // Debug only check.
+  REI_ASSERT (
+    (old_layout == VK_IMAGE_LAYOUT_UNDEFINED
+    || old_layout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL
+    || old_layout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL
+    )
+    &&
+    (new_layout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL
+    || new_layout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL
+    || new_layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+    )
+  );
+
+  static const VkAccessFlags access_flags_lt[] = {
+    0x0,
+    0x0,
+    0x0,
+    0x0,
+    0x0,
+    VK_ACCESS_SHADER_READ_BIT,
+    VK_ACCESS_MEMORY_READ_BIT,
+    VK_ACCESS_MEMORY_WRITE_BIT
+  };
+
+  const VkImageMemoryBarrier barrier = {
+    .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+    .image = image->handle,
+    .srcAccessMask = access_flags_lt[old_layout],
+    .dstAccessMask = access_flags_lt[new_layout],
+    .oldLayout = old_layout,
+    .newLayout = new_layout,
+    .subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+    .subresourceRange.baseMipLevel = current_mip_lvl,
+    .subresourceRange.levelCount = mip_lvl_count,
+    .subresourceRange.baseArrayLayer = 0,
+    .subresourceRange.layerCount = 1
+  };
+
+  vkCmdPipelineBarrier (cmd_buffer, src_pipeline_stage, dst_pipeline_stage, 0, 0, NULL, 0, NULL, 1, &barrier);
+}
+
+
+static void _s_copy_buffer_to_image_cmd (
+  VkCommandBuffer cmd_buffer,
+  const rei_vk_buffer_t* src,
+  rei_vk_image_t* dst,
+  const u64* src_offsets,
+  u32 width,
+  u32 height,
+  u32 mip_levels) {
+
+  VkBufferImageCopy* copy_infos = alloca (sizeof *copy_infos * mip_levels);
+
+  for (u32 i = 0; i < mip_levels; ++i) {
+    VkBufferImageCopy* current = &copy_infos[i];
+    current->bufferOffset = src_offsets[i];
+    current->bufferRowLength = 0;
+    current->bufferImageHeight = 0;
+    current->imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    current->imageSubresource.mipLevel = i;
+    current->imageSubresource.baseArrayLayer = 0;
+    current->imageSubresource.layerCount = 1;
+    current->imageOffset.x = 0;
+    current->imageOffset.y = 0;
+    current->imageOffset.z = 0;
+    current->imageExtent.width = width >> i;
+    current->imageExtent.height = height >> i;
+    current->imageExtent.depth = 1;
+  }
+
+  vkCmdCopyBufferToImage (cmd_buffer, src->handle, dst->handle, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, mip_levels, copy_infos);
 }
 
 const char* rei_vk_show_error (VkResult error) {
@@ -1120,54 +1204,6 @@ void rei_vk_create_sampler (const rei_vk_device_t* device, f32 min_lod, f32 max_
   REI_VK_CHECK (vkCreateSampler (device->handle, &create_info, NULL, out));
 }
 
-void rei_vk_transition_image_cmd (VkCommandBuffer cmd_buffer, const rei_vk_image_trans_info_t* trans_info, VkImage image) {
-  VkImageMemoryBarrier barrier = {
-    .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-    .image = image,
-    .oldLayout = trans_info->old_layout,
-    .newLayout = trans_info->new_layout,
-    .subresourceRange = *trans_info->subresource_range,
-  };
-
-  switch (trans_info->old_layout) {
-    case VK_IMAGE_LAYOUT_UNDEFINED:
-      barrier.srcAccessMask = 0;
-      break;
-
-    case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
-      barrier.srcAccessMask = VK_ACCESS_MEMORY_READ_BIT;
-      break;
-
-    case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
-      barrier.srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT;
-      break;
-
-    default:
-      barrier.srcAccessMask = 0;
-      break;
-  }
-
-  switch (trans_info->new_layout) {
-    case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
-      barrier.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
-      break;
-
-    case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
-      barrier.dstAccessMask = VK_ACCESS_MEMORY_WRITE_BIT;
-      break;
-
-    case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
-      barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-      break;
-
-    default:
-      barrier.dstAccessMask = 0;
-      break;
-  }
-
-  vkCmdPipelineBarrier (cmd_buffer, trans_info->src_stage, trans_info->dst_stage, 0, 0, NULL, 0, NULL, 1, &barrier);
-}
-
 void rei_vk_copy_buffer_cmd (
   VkCommandBuffer cmd_buffer,
   u64 size,
@@ -1182,33 +1218,6 @@ void rei_vk_copy_buffer_cmd (
   };
 
   vkCmdCopyBuffer (cmd_buffer, src->handle, dst->handle, 1, &copy_info);
-}
-
-void rei_vk_copy_buffer_to_image_cmd (
-  VkCommandBuffer cmd_buffer,
-  const rei_vk_buffer_t* src,
-  rei_vk_image_t* dst,
-  u32 mip_level,
-  u32 width,
-  u32 height) {
-
-  VkBufferImageCopy copy_info = {
-    .bufferOffset = 0,
-    .bufferRowLength = 0,
-    .bufferImageHeight = 0,
-    .imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-    .imageSubresource.mipLevel = mip_level,
-    .imageSubresource.baseArrayLayer = 0,
-    .imageSubresource.layerCount = 1,
-    .imageOffset.x = 0,
-    .imageOffset.y = 0,
-    .imageOffset.z = 0,
-    .imageExtent.width = width,
-    .imageExtent.height = height,
-    .imageExtent.depth = 1
-  };
-
-  vkCmdCopyBufferToImage (cmd_buffer, src->handle, dst->handle, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy_info);
 }
 
 void rei_vk_create_texture_cmd (
@@ -1242,38 +1251,28 @@ void rei_vk_create_texture_cmd (
     out
   );
 
-  VkImageSubresourceRange subresource_range = {
-    .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-    .baseMipLevel = 0,
-    .levelCount = 1,
-    .baseArrayLayer = 0,
-    .layerCount = 1
-  };
-
-  rei_vk_transition_image_cmd (
+  _s_set_image_layout_cmd (
     cmd_buffer,
-    &(const rei_vk_image_trans_info_t) {
-      .old_layout = VK_IMAGE_LAYOUT_UNDEFINED,
-      .new_layout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-      .src_stage = VK_PIPELINE_STAGE_TRANSFER_BIT,
-      .dst_stage = VK_PIPELINE_STAGE_TRANSFER_BIT,
-      .subresource_range = &subresource_range,
-    },
-    out->handle
+    out,
+    VK_IMAGE_LAYOUT_UNDEFINED,
+    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+    VK_PIPELINE_STAGE_HOST_BIT,
+    VK_PIPELINE_STAGE_TRANSFER_BIT,
+    1,
+    0
   );
 
-  rei_vk_copy_buffer_to_image_cmd (cmd_buffer, staging_buffer, out, 0, src->width, src->height);
+  _s_copy_buffer_to_image_cmd (cmd_buffer, staging_buffer, out, (const u64[]) {0}, src->width, src->height, 1);
 
-  rei_vk_transition_image_cmd (
+  _s_set_image_layout_cmd (
     cmd_buffer,
-    &(const rei_vk_image_trans_info_t) {
-      .old_layout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-      .new_layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-      .src_stage = VK_PIPELINE_STAGE_TRANSFER_BIT,
-      .dst_stage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-      .subresource_range = &subresource_range,
-    },
-    out->handle
+    out,
+    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+    VK_PIPELINE_STAGE_TRANSFER_BIT,
+    VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+    1,
+    0
   );
 }
 
@@ -1312,38 +1311,28 @@ void rei_vk_create_texture_raw (
   VkCommandBuffer cmd_buffer;
   rei_vk_start_imm_cmd (device, context, &cmd_buffer);
 
-  VkImageSubresourceRange subresource_range = {
-    .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-    .baseMipLevel = 0,
-    .levelCount = 1,
-    .baseArrayLayer = 0,
-    .layerCount = 1
-  };
-
-  rei_vk_transition_image_cmd (
+  _s_set_image_layout_cmd (
     cmd_buffer,
-    &(const rei_vk_image_trans_info_t) {
-      .old_layout = VK_IMAGE_LAYOUT_UNDEFINED,
-      .new_layout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-      .src_stage = VK_PIPELINE_STAGE_TRANSFER_BIT,
-      .dst_stage = VK_PIPELINE_STAGE_TRANSFER_BIT,
-      .subresource_range = &subresource_range,
-    },
-    out->handle
+    out,
+    VK_IMAGE_LAYOUT_UNDEFINED,
+    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+    VK_PIPELINE_STAGE_HOST_BIT,
+    VK_PIPELINE_STAGE_TRANSFER_BIT,
+    1,
+    0
   );
 
-  rei_vk_copy_buffer_to_image_cmd (cmd_buffer, &staging_buffer, out, 0, width, height);
+  _s_copy_buffer_to_image_cmd (cmd_buffer, &staging_buffer, out, (const u64[]) {0}, width, height, 1);
 
-  rei_vk_transition_image_cmd (
+  _s_set_image_layout_cmd (
     cmd_buffer,
-    &(const rei_vk_image_trans_info_t) {
-      .old_layout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-      .new_layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-      .src_stage = VK_PIPELINE_STAGE_TRANSFER_BIT,
-      .dst_stage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-      .subresource_range = &subresource_range,
-    },
-    out->handle
+    out,
+    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+    VK_PIPELINE_STAGE_TRANSFER_BIT,
+    VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+    1,
+    0
   );
 
   rei_vk_end_imm_cmd (device, context, cmd_buffer);

@@ -71,14 +71,6 @@ typedef struct rei_vk_gfx_pipeline_ci_t {
   VkPipelineRasterizationStateCreateInfo* rasterization_state;
 } rei_vk_gfx_pipeline_ci_t;
 
-typedef struct rei_vk_image_trans_info_t {
-  VkImageLayout old_layout;
-  VkImageLayout new_layout;
-  VkPipelineStageFlags src_stage;
-  VkPipelineStageFlags dst_stage;
-  VkImageSubresourceRange* subresource_range;
-} rei_vk_image_trans_info_t;
-
 typedef struct rei_vk_instance_t {
   VkInstance handle;
   #ifndef NDEBUG
@@ -252,23 +244,12 @@ void rei_vk_destroy_imm_ctxt (const rei_vk_device_t* device, rei_vk_imm_ctxt_t* 
 
 void rei_vk_start_imm_cmd (const rei_vk_device_t* device, const rei_vk_imm_ctxt_t* context, VkCommandBuffer* out);
 
-void rei_vk_transition_image_cmd (VkCommandBuffer cmd_buffer, const rei_vk_image_trans_info_t* trans_info, VkImage image);
-
 void rei_vk_copy_buffer_cmd (
   VkCommandBuffer cmd_buffer,
   u64 size,
   u64 src_offset,
   const rei_vk_buffer_t* restrict src,
   rei_vk_buffer_t* restrict dst
-);
-
-void rei_vk_copy_buffer_to_image_cmd (
-  VkCommandBuffer cmd_buffer,
-  const rei_vk_buffer_t* src,
-  rei_vk_image_t* dst,
-  u32 mip_level,
-  u32 width,
-  u32 height
 );
 
 // Decompress and create a texture loaded from a rtex file.
